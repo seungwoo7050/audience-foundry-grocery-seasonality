@@ -19,6 +19,7 @@ import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import Executor, Future, ThreadPoolExecutor
+from contextlib import ExitStack
 from dataclasses import dataclass, field
 from typing import Any, Final, Literal, Never
 from urllib.error import HTTPError
@@ -33,7 +34,8 @@ from urllib.request import (
 
 PHASE0_DURATION_SECONDS: Final = 900
 REQUESTS_PER_SECOND: Final = 10
-MAX_CONCURRENCY: Final = 20
+LOGICAL_VIRTUAL_USERS: Final = 20
+MAX_CONCURRENCY: Final = LOGICAL_VIRTUAL_USERS
 REQUEST_TIMEOUT_SECONDS: Final = 2.0
 MAX_RESPONSE_BYTES: Final = 2 * 1024 * 1024
 P95_LIMIT_MS: Final = 500.0
@@ -140,6 +142,7 @@ class HttpObservation:
 @dataclass(frozen=True, slots=True)
 class CompletedRequest:
     kind: RequestKind
+    virtual_user_id: int
     observation: HttpObservation
 
 
@@ -175,12 +178,15 @@ class LoadReport:
     max_schedule_jitter_ms: float
     minimum_inter_submission_ms: float
     burst_interval_violations: int
+    logical_users_configured: int
+    logical_users_participated: int
     observed_peak_active: int
     duration_contract_met: bool
     throughput_target_met: bool
     schedule_jitter_contract_met: bool
     no_burst_contract_met: bool
     schedule_contract_met: bool
+    logical_users_contract_met: bool
     concurrency_contract_met: bool
     workload_consistent: bool
     revision_consistent: bool
@@ -191,10 +197,15 @@ class LoadReport:
             "profile": self.profile,
             "duration_seconds": self.duration_seconds,
             "target_requests_per_second": REQUESTS_PER_SECOND,
+            "logical_users": {
+                "configured": self.logical_users_configured,
+                "participated": self.logical_users_participated,
+                "round_robin_contract_met": self.logical_users_contract_met,
+            },
             "concurrency": {
-                "limit": MAX_CONCURRENCY,
-                "observed_peak_active": self.observed_peak_active,
-                "within_limit": self.concurrency_contract_met,
+                "in_flight_limit": MAX_CONCURRENCY,
+                "observed_in_flight_peak": self.observed_peak_active,
+                "in_flight_within_limit": self.concurrency_contract_met,
             },
             "counts": {
                 "scheduled": self.scheduled_requests,
@@ -417,6 +428,7 @@ class _ActiveRequestCounter:
 
 
 def _execute_scheduled_request(
+    virtual_user_id: int,
     requester: Requester,
     url: str,
     port: int,
@@ -425,6 +437,8 @@ def _execute_scheduled_request(
     monotonic: Callable[[], float],
     active_counter: _ActiveRequestCounter,
 ) -> _TimedObservation:
+    if type(virtual_user_id) is not int or not 0 <= virtual_user_id < LOGICAL_VIRTUAL_USERS:
+        raise LoadProfileError("argument_invalid")
     request_started_at = monotonic()
     schedule_jitter_seconds = max(0.0, request_started_at - paced_deadline)
     active_counter.enter()
@@ -516,6 +530,18 @@ def build_report(
         >= RECOVERY_FLOOR_INTERVAL_MS
     )
     schedule_contract_met = schedule_jitter_contract_met and no_burst_contract_met
+    expected_virtual_user_ids = [
+        index % LOGICAL_VIRTUAL_USERS for index in range(config.scheduled_requests)
+    ]
+    completed_virtual_user_ids = [request.virtual_user_id for request in completed]
+    logical_users_participated = len(
+        {
+            virtual_user_id
+            for virtual_user_id in completed_virtual_user_ids
+            if type(virtual_user_id) is int and 0 <= virtual_user_id < LOGICAL_VIRTUAL_USERS
+        }
+    )
+    logical_users_contract_met = bool(completed_virtual_user_ids == expected_virtual_user_ids)
     concurrency_contract_met = bool(1 <= measurements.observed_peak_active <= MAX_CONCURRENCY)
     workload_consistent = bool(
         catalog_count == (config.scheduled_requests * 7) // 10
@@ -531,6 +557,7 @@ def build_report(
         and duration_contract_met
         and throughput_target_met
         and schedule_contract_met
+        and logical_users_contract_met
         and concurrency_contract_met
     )
     return LoadReport(
@@ -560,12 +587,15 @@ def build_report(
             3,
         ),
         burst_interval_violations=measurements.burst_interval_violations,
+        logical_users_configured=LOGICAL_VIRTUAL_USERS,
+        logical_users_participated=logical_users_participated,
         observed_peak_active=measurements.observed_peak_active,
         duration_contract_met=duration_contract_met,
         throughput_target_met=throughput_target_met,
         schedule_jitter_contract_met=schedule_jitter_contract_met,
         no_burst_contract_met=no_burst_contract_met,
         schedule_contract_met=schedule_contract_met,
+        logical_users_contract_met=logical_users_contract_met,
         concurrency_contract_met=concurrency_contract_met,
         workload_consistent=workload_consistent,
         revision_consistent=revision_consistent,
@@ -586,8 +616,12 @@ def run_profile(
     previous_submission_at: float | None = None
     inter_submission_ms: list[float] = []
     active_counter = _ActiveRequestCounter()
-    submitted: list[tuple[RequestKind, float, Future[_TimedObservation]]] = []
-    with executor_factory(MAX_CONCURRENCY) as executor:
+    submitted: list[tuple[RequestKind, int, float, Future[_TimedObservation]]] = []
+    with ExitStack() as executor_stack:
+        virtual_user_executors = tuple(
+            executor_stack.enter_context(executor_factory(1))
+            for _virtual_user_id in range(LOGICAL_VIRTUAL_USERS)
+        )
         for index in range(config.scheduled_requests):
             nominal_deadline = started_at + (index / REQUESTS_PER_SECOND)
             paced_deadline = nominal_deadline
@@ -604,12 +638,15 @@ def run_profile(
                 )
             previous_submission_at = submitted_at
             plan = request_plan(config, index)
+            virtual_user_id = index % LOGICAL_VIRTUAL_USERS
             submitted.append(
                 (
                     plan.kind,
+                    virtual_user_id,
                     paced_deadline,
-                    executor.submit(
+                    virtual_user_executors[virtual_user_id].submit(
                         _execute_scheduled_request,
+                        virtual_user_id,
                         requester,
                         plan.url,
                         config.port,
@@ -629,7 +666,7 @@ def run_profile(
 
         completed: list[CompletedRequest] = []
         schedule_jitter_ms: list[float] = []
-        for kind, paced_deadline, future in submitted:
+        for kind, virtual_user_id, paced_deadline, future in submitted:
             try:
                 timed = future.result()
             except Exception:
@@ -642,7 +679,13 @@ def run_profile(
                     schedule_jitter_ms=fallback_latency_ms,
                 )
             schedule_jitter_ms.append(timed.schedule_jitter_ms)
-            completed.append(CompletedRequest(kind=kind, observation=timed.observation))
+            completed.append(
+                CompletedRequest(
+                    kind=kind,
+                    virtual_user_id=virtual_user_id,
+                    observation=timed.observation,
+                )
+            )
 
     elapsed_seconds = max(0.0, monotonic() - started_at)
     minimum_inter_submission_ms = min(inter_submission_ms, default=0.0)

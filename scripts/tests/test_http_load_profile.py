@@ -18,6 +18,7 @@ import pytest
 
 from scripts.http_load_profile import (
     HTTP_5XX_RATE_LIMIT,
+    LOGICAL_VIRTUAL_USERS,
     MAX_CONCURRENCY,
     MAX_RESPONSE_BYTES,
     NOMINAL_REQUEST_INTERVAL_MS,
@@ -96,8 +97,32 @@ class InlineExecutor(Executor):
 
 
 def inline_executor_factory(max_workers: int) -> Executor:
-    assert max_workers == MAX_CONCURRENCY
+    assert max_workers == 1
     return InlineExecutor()
+
+
+class RecordingSessionExecutor(InlineExecutor):
+    def __init__(
+        self,
+        virtual_user_id: int,
+        submission_order: list[int],
+    ) -> None:
+        self.virtual_user_id = virtual_user_id
+        self.submission_order = submission_order
+        self.submitted_ids: list[int] = []
+
+    def submit[T](
+        self,
+        fn: Callable[..., T],
+        /,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Future[T]:
+        submitted_id = args[0]
+        assert submitted_id == self.virtual_user_id
+        self.submitted_ids.append(submitted_id)
+        self.submission_order.append(submitted_id)
+        return super().submit(fn, *args, **kwargs)
 
 
 class FakeResponse:
@@ -155,7 +180,11 @@ def completed_requests(
     observations: list[HttpObservation],
 ) -> list[CompletedRequest]:
     return [
-        CompletedRequest(kind="catalog" if index % 10 < 7 else "detail", observation=value)
+        CompletedRequest(
+            kind="catalog" if index % 10 < 7 else "detail",
+            virtual_user_id=index % LOGICAL_VIRTUAL_USERS,
+            observation=value,
+        )
         for index, value in enumerate(observations)
     ]
 
@@ -191,7 +220,7 @@ def test_phase0_defaults_are_exact_and_smoke_is_explicitly_non_acceptance() -> N
     assert phase0.duration_seconds == PHASE0_DURATION_SECONDS == 900
     assert phase0.scheduled_requests == 9_000
     assert REQUESTS_PER_SECOND == 10
-    assert MAX_CONCURRENCY == 20
+    assert LOGICAL_VIRTUAL_USERS == MAX_CONCURRENCY == 20
     assert NOMINAL_REQUEST_INTERVAL_MS == 100.0
     assert RECOVERY_FLOOR_INTERVAL_MS == 90.0
     assert P95_SCHEDULE_JITTER_LIMIT_MS == 100.0
@@ -269,6 +298,9 @@ def test_smoke_runner_paces_ten_requests_and_emits_no_request_or_revision_values
     assert report.max_schedule_jitter_ms == 0.0
     assert report.minimum_inter_submission_ms == 100.0
     assert report.burst_interval_violations == 0
+    assert report.logical_users_configured == 20
+    assert report.logical_users_participated == 10
+    assert report.logical_users_contract_met is True
     assert report.observed_peak_active == 1
     assert report.duration_contract_met is True
     assert report.throughput_target_met is True
@@ -283,12 +315,25 @@ def test_smoke_runner_paces_ten_requests_and_emits_no_request_or_revision_values
     assert isinstance(timing, dict)
     assert timing["nominal_request_interval_ms"] == 100.0
     assert timing["recovery_floor_interval_ms"] == 90.0
+    logical_users = report.data()["logical_users"]
+    assert logical_users == {
+        "configured": 20,
+        "participated": 10,
+        "round_robin_contract_met": True,
+    }
+    concurrency = report.data()["concurrency"]
+    assert concurrency == {
+        "in_flight_limit": 20,
+        "observed_in_flight_peak": 1,
+        "in_flight_within_limit": True,
+    }
     receipt = report.render()
     assert str(_DETAIL_ID) not in receipt
     assert _REVISION_TOKEN not in receipt
     assert "series/" not in receipt
     assert "category=" not in receipt
     assert "%" not in receipt
+    assert "virtual_user_id" not in receipt
 
 
 def test_phase0_runner_executes_exact_900_second_ten_rps_seventy_thirty_plan() -> None:
@@ -314,7 +359,47 @@ def test_phase0_runner_executes_exact_900_second_ten_rps_seventy_thirty_plan() -
     assert report.p95_schedule_jitter_ms == 0.0
     assert report.minimum_inter_submission_ms == 100.0
     assert report.burst_interval_violations == 0
+    assert report.logical_users_configured == 20
+    assert report.logical_users_participated == 20
+    assert report.logical_users_contract_met is True
     assert report.workload_consistent is True
+    assert report.passed is True
+
+
+def test_twenty_fixed_logical_user_sessions_receive_requests_round_robin() -> None:
+    config = LoadProfileConfig(
+        port=8123,
+        detail_id=_DETAIL_ID,
+        duration_seconds=4,
+        profile="smoke",
+    )
+    clock = FakeClock()
+    sessions: list[RecordingSessionExecutor] = []
+    submission_order: list[int] = []
+
+    def session_executor_factory(max_workers: int) -> Executor:
+        assert max_workers == 1
+        session = RecordingSessionExecutor(len(sessions), submission_order)
+        sessions.append(session)
+        return session
+
+    report = run_profile(
+        config,
+        requester=lambda _url, _port, _timeout: observation(),
+        monotonic=clock.monotonic,
+        sleeper=clock.sleep,
+        executor_factory=session_executor_factory,
+    )
+
+    assert len(sessions) == LOGICAL_VIRTUAL_USERS
+    assert submission_order == list(range(LOGICAL_VIRTUAL_USERS)) * 2
+    assert [session.submitted_ids for session in sessions] == [
+        [virtual_user_id, virtual_user_id] for virtual_user_id in range(LOGICAL_VIRTUAL_USERS)
+    ]
+    assert report.logical_users_configured == 20
+    assert report.logical_users_participated == 20
+    assert report.logical_users_contract_met is True
+    assert report.observed_peak_active == 1
     assert report.passed is True
 
 
@@ -354,6 +439,7 @@ def test_end_to_end_latency_includes_schedule_queue_delay_through_completion() -
         return observation(latency_ms=50.0)
 
     timed = _execute_scheduled_request(
+        0,
         requester,
         "http://127.0.0.1:8000/",
         8000,
@@ -430,7 +516,7 @@ def test_small_repeated_clock_jitter_preserves_inter_submission_rate() -> None:
     assert report.passed is True
 
 
-def test_observed_active_requests_are_bounded_by_the_twenty_worker_executor() -> None:
+def test_observed_in_flight_peak_is_measured_separately_and_bounded_at_twenty() -> None:
     active_counter = _ActiveRequestCounter()
     all_active = threading.Barrier(MAX_CONCURRENCY)
 
@@ -443,6 +529,7 @@ def test_observed_active_requests_are_bounded_by_the_twenty_worker_executor() ->
         futures = [
             executor.submit(
                 _execute_scheduled_request,
+                virtual_user_id,
                 requester,
                 "http://127.0.0.1:8000/",
                 8000,
@@ -451,7 +538,7 @@ def test_observed_active_requests_are_bounded_by_the_twenty_worker_executor() ->
                 time.monotonic,
                 active_counter,
             )
-            for _index in range(MAX_CONCURRENCY)
+            for virtual_user_id in range(MAX_CONCURRENCY)
         ]
         assert all(future.result().observation.valid for future in futures)
 
@@ -522,6 +609,39 @@ def test_report_rejects_observed_concurrency_above_configured_bound() -> None:
     )
 
     assert report.concurrency_contract_met is False
+    assert report.passed is False
+
+
+def test_report_rejects_non_round_robin_logical_user_sequence() -> None:
+    config = LoadProfileConfig(
+        port=8000,
+        detail_id=_DETAIL_ID,
+        duration_seconds=2,
+        profile="smoke",
+    )
+    requests = completed_requests([observation() for _index in range(20)])
+    first = requests[0]
+    second = requests[1]
+    requests[0] = CompletedRequest(
+        kind=first.kind,
+        virtual_user_id=second.virtual_user_id,
+        observation=first.observation,
+    )
+    requests[1] = CompletedRequest(
+        kind=second.kind,
+        virtual_user_id=first.virtual_user_id,
+        observation=second.observation,
+    )
+
+    report = build_report(
+        config,
+        requests,
+        measurements=run_measurements(elapsed_seconds=2.0),
+    )
+
+    assert report.logical_users_configured == 20
+    assert report.logical_users_participated == 20
+    assert report.logical_users_contract_met is False
     assert report.passed is False
 
 

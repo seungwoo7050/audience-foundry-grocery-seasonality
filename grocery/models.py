@@ -1,10 +1,13 @@
+import hashlib
+import json
 import re
 import uuid
+from collections.abc import Sequence
 from typing import Any
 
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
-from django.db import models
+from django.db import models, transaction
 from django.db.models import F, Q
 from django.utils import timezone
 
@@ -283,6 +286,98 @@ class SourceConfiguration(models.Model):
         } and not all(evidence_values):
             raise ValidationError("The selected state requires complete rights evidence.")
 
+    @property
+    def artifact_source_identity(self) -> str:
+        return ":".join(
+            (
+                self.dataset_id,
+                self.interface_revision,
+                self.publication_mode,
+                self.coverage_identity,
+            )
+        )
+
+
+class SourceArtifact(models.Model):
+    class RetentionMode(models.TextChoices):
+        HASH_ONLY = "HASH_ONLY", "Hash only"
+
+    class MediaType(models.TextChoices):
+        JSON = "application/json", "JSON"
+
+    class Encoding(models.TextChoices):
+        UTF_8 = "utf-8", "UTF-8"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source_identity = models.CharField(max_length=512)
+    ordered_manifest_sha256 = models.CharField(
+        max_length=64,
+        validators=[sha256_validator],
+    )
+    page_count = models.PositiveIntegerField()
+    total_bytes = models.PositiveBigIntegerField()
+    media_type = models.CharField(
+        max_length=32,
+        choices=MediaType.choices,
+        default=MediaType.JSON,
+    )
+    encoding = models.CharField(
+        max_length=16,
+        choices=Encoding.choices,
+        default=Encoding.UTF_8,
+    )
+    retention_mode = models.CharField(
+        max_length=16,
+        choices=RetentionMode.choices,
+        default=RetentionMode.HASH_ONLY,
+    )
+    first_seen_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("source_identity", "ordered_manifest_sha256"),
+                name="grocery_artifact_source_manifest_uniq",
+            ),
+            models.CheckConstraint(
+                condition=~Q(source_identity=""),
+                name="grocery_artifact_source_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=Q(ordered_manifest_sha256__regex=SHA256_PATTERN),
+                name="grocery_artifact_manifest_hash_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(page_count__gt=0),
+                name="grocery_artifact_page_count_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(total_bytes__gte=0),
+                name="grocery_artifact_bytes_nonnegative",
+            ),
+            models.CheckConstraint(
+                condition=Q(media_type="application/json"),
+                name="grocery_artifact_media_type_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(encoding="utf-8"),
+                name="grocery_artifact_encoding_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(retention_mode="HASH_ONLY"),
+                name="grocery_artifact_retention_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.source_identity}:{self.ordered_manifest_sha256}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ValidationError("Source artifacts are immutable.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
 
 class FetchAttempt(models.Model):
     class State(models.TextChoices):
@@ -309,6 +404,13 @@ class FetchAttempt(models.Model):
         SourceConfiguration,
         on_delete=models.PROTECT,
         related_name="fetch_attempts",
+    )
+    artifact = models.ForeignKey(
+        SourceArtifact,
+        on_delete=models.PROTECT,
+        related_name="fetch_attempts",
+        null=True,
+        blank=True,
     )
     acquisition_run_id = models.UUIDField()
     attempt_ordinal = models.PositiveSmallIntegerField()
@@ -397,6 +499,10 @@ class FetchAttempt(models.Model):
                 condition=Q(completed_at__isnull=True) | Q(completed_at__gte=F("started_at")),
                 name="grocery_fetch_time_order_valid",
             ),
+            models.CheckConstraint(
+                condition=Q(artifact__isnull=True) | Q(state="SUCCEEDED"),
+                name="grocery_fetch_artifact_success_only",
+            ),
         ]
 
     def __str__(self) -> str:
@@ -405,6 +511,18 @@ class FetchAttempt(models.Model):
     def save(self, *args: Any, **kwargs: Any) -> None:
         self.full_clean()
         super().save(*args, **kwargs)
+
+    def clean(self) -> None:
+        super().clean()
+        artifact = self.artifact
+        if artifact is None:
+            return
+        if self.state != self.State.SUCCEEDED:
+            raise ValidationError(
+                {"artifact": "Only a succeeded attempt can reference an artifact."}
+            )
+        if artifact.source_identity != self.source_configuration.artifact_source_identity:
+            raise ValidationError({"artifact": "Artifact and attempt source identities differ."})
 
 
 class PageReceipt(models.Model):
@@ -554,3 +672,233 @@ class PageReceipt(models.Model):
         super().clean()
         if self._state.adding and self.fetch_attempt.state != FetchAttempt.State.STARTED:
             raise ValidationError("Page receipts can only be added to a started fetch attempt.")
+
+
+class ParseRun(models.Model):
+    class Status(models.TextChoices):
+        STARTED = "STARTED", "Started"
+        VALIDATED = "VALIDATED", "Validated"
+        QUARANTINED = "QUARANTINED", "Quarantined"
+        FAILED = "FAILED", "Failed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    artifact = models.ForeignKey(
+        SourceArtifact,
+        on_delete=models.PROTECT,
+        related_name="parse_runs",
+    )
+    parser_revision = models.CharField(max_length=64)
+    configuration_hash = models.CharField(max_length=64, validators=[sha256_validator])
+    result_hash = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        validators=[sha256_validator],
+    )
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.STARTED)
+    started_at = models.DateTimeField(default=timezone.now)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    total_row_count = models.PositiveIntegerField(default=0)
+    accepted_row_count = models.PositiveIntegerField(default=0)
+    missing_reference_row_count = models.PositiveIntegerField(default=0)
+    out_of_scope_row_count = models.PositiveIntegerField(default=0)
+    quarantined_row_count = models.PositiveIntegerField(default=0)
+    failure_code = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        validators=[RegexValidator(r"^[A-Z][A-Z0-9_]*$")],
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("artifact", "parser_revision", "configuration_hash"),
+                name="grocery_parse_artifact_revision_config_uniq",
+            ),
+            models.CheckConstraint(
+                condition=~Q(parser_revision=""),
+                name="grocery_parse_revision_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=Q(configuration_hash__regex=SHA256_PATTERN),
+                name="grocery_parse_configuration_hash_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(result_hash="") | Q(result_hash__regex=SHA256_PATTERN),
+                name="grocery_parse_result_hash_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(status__in=("STARTED", "VALIDATED", "QUARANTINED", "FAILED")),
+                name="grocery_parse_status_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(total_row_count__gte=0)
+                    & Q(accepted_row_count__gte=0)
+                    & Q(missing_reference_row_count__gte=0)
+                    & Q(out_of_scope_row_count__gte=0)
+                    & Q(quarantined_row_count__gte=0)
+                ),
+                name="grocery_parse_counts_nonnegative",
+            ),
+            models.CheckConstraint(
+                condition=Q(
+                    total_row_count=F("accepted_row_count")
+                    + F("out_of_scope_row_count")
+                    + F("quarantined_row_count")
+                ),
+                name="grocery_parse_total_reconciled",
+            ),
+            models.CheckConstraint(
+                condition=Q(missing_reference_row_count__lte=F("accepted_row_count")),
+                name="grocery_parse_missing_within_accepted",
+            ),
+            models.CheckConstraint(
+                condition=Q(failure_code="") | Q(failure_code__regex=r"^[A-Z][A-Z0-9_]*$"),
+                name="grocery_parse_failure_code_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        status="STARTED",
+                        completed_at__isnull=True,
+                        result_hash="",
+                        failure_code="",
+                    )
+                    | (
+                        Q(
+                            status="VALIDATED",
+                            completed_at__isnull=False,
+                            quarantined_row_count=0,
+                            failure_code="",
+                        )
+                        & ~Q(result_hash="")
+                    )
+                    | (
+                        Q(
+                            status="QUARANTINED",
+                            completed_at__isnull=False,
+                            result_hash="",
+                            quarantined_row_count__gt=0,
+                        )
+                        & ~Q(failure_code="")
+                    )
+                    | (
+                        Q(
+                            status="FAILED",
+                            completed_at__isnull=False,
+                            result_hash="",
+                        )
+                        & ~Q(failure_code="")
+                    )
+                ),
+                name="grocery_parse_status_outcome_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(completed_at__isnull=True) | Q(completed_at__gte=F("started_at")),
+                name="grocery_parse_time_order_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.artifact_id}:{self.parser_revision}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            persisted = type(self).objects.filter(pk=self.pk).first()
+            if persisted is not None:
+                immutable_identity = (
+                    "artifact_id",
+                    "parser_revision",
+                    "configuration_hash",
+                    "started_at",
+                )
+                if any(
+                    getattr(self, field_name) != getattr(persisted, field_name)
+                    for field_name in immutable_identity
+                ):
+                    raise ValidationError("Parse run identity fields are immutable.")
+                if persisted.status != self.Status.STARTED:
+                    raise ValidationError("Completed parse runs are immutable.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+def ordered_page_manifest_sha256(receipts: Sequence[PageReceipt]) -> str:
+    manifest = [receipt.body_sha256 for receipt in receipts]
+    canonical = json.dumps(manifest, ensure_ascii=True, separators=(",", ":")).encode("ascii")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+@transaction.atomic
+def build_source_artifact(attempt_id: uuid.UUID) -> tuple[SourceArtifact, bool]:
+    attempt = (
+        FetchAttempt.objects.select_for_update()
+        .select_related("source_configuration")
+        .get(pk=attempt_id)
+    )
+    if attempt.state != FetchAttempt.State.SUCCEEDED:
+        raise ValidationError("Only one completed, succeeded attempt can build an artifact.")
+
+    receipts = list(
+        PageReceipt.objects.select_for_update()
+        .filter(fetch_attempt=attempt)
+        .order_by("request_ordinal")
+    )
+    expected_ordinals = list(range(1, len(receipts) + 1))
+    if not receipts:
+        raise ValidationError("A source artifact requires at least one page receipt.")
+    if [receipt.request_ordinal for receipt in receipts] != expected_ordinals:
+        raise ValidationError("Page receipt request ordinals must be contiguous from one.")
+    if [receipt.page_number for receipt in receipts] != expected_ordinals:
+        raise ValidationError("Page receipt page numbers must be contiguous from one.")
+    if any(
+        receipt.body_state != PageReceipt.BodyState.RECEIVED
+        or receipt.http_status != 200
+        or receipt.provider_result_code != "0"
+        or receipt.media_type != PageReceipt.MediaType.JSON
+        or receipt.encoding != PageReceipt.Encoding.UTF_8
+        for receipt in receipts
+    ):
+        raise ValidationError("Every artifact page must be a successful JSON UTF-8 receipt.")
+
+    declared_totals = {receipt.declared_total_count for receipt in receipts}
+    if None in declared_totals or len(declared_totals) != 1:
+        raise ValidationError("Every page must declare the same total row count.")
+    declared_total = next(iter(declared_totals))
+    received_rows = sum(receipt.received_row_count for receipt in receipts)
+    received_bytes = sum(receipt.body_byte_length for receipt in receipts)
+    if received_rows != declared_total:
+        raise ValidationError("Received rows do not reconcile with the declared total.")
+    if (
+        attempt.received_page_count != len(receipts)
+        or attempt.received_row_count != received_rows
+        or attempt.received_byte_count != received_bytes
+    ):
+        raise ValidationError("Attempt counters do not reconcile with its page receipts.")
+
+    manifest_sha256 = ordered_page_manifest_sha256(receipts)
+    source_identity = attempt.source_configuration.artifact_source_identity
+    defaults: dict[str, Any] = {
+        "page_count": len(receipts),
+        "total_bytes": received_bytes,
+        "media_type": SourceArtifact.MediaType.JSON,
+        "encoding": SourceArtifact.Encoding.UTF_8,
+        "retention_mode": SourceArtifact.RetentionMode.HASH_ONLY,
+        "first_seen_at": attempt.completed_at,
+    }
+    artifact, created = SourceArtifact.objects.get_or_create(
+        source_identity=source_identity,
+        ordered_manifest_sha256=manifest_sha256,
+        defaults=defaults,
+    )
+    expected_fields = ("page_count", "total_bytes", "media_type", "encoding", "retention_mode")
+    if any(getattr(artifact, field_name) != defaults[field_name] for field_name in expected_fields):
+        raise ValidationError("An existing artifact conflicts with the reconciled manifest.")
+    if attempt.artifact_id not in (None, artifact.id):
+        raise ValidationError("The attempt already references a different artifact.")
+    if attempt.artifact_id is None:
+        attempt.artifact = artifact
+        attempt.save(update_fields=["artifact"])
+    return artifact, created

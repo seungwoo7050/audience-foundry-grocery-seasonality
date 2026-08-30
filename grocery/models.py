@@ -12,6 +12,7 @@ from django.db.models import F, Q
 from django.utils import timezone
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
+DIGIT_CODE_PATTERN = r"^[0-9]+$"
 sha256_validator = RegexValidator(
     regex=SHA256_PATTERN,
     message="Enter a lowercase 64-character SHA-256 digest.",
@@ -823,6 +824,167 @@ class ParseRun(models.Model):
                     raise ValidationError("Completed parse runs are immutable.")
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class PriceSeriesKey(models.Model):
+    """Immutable semantic identity for one reviewed KAMIS retail price series."""
+
+    class ProductClass(models.TextChoices):
+        RETAIL = "01", "Retail"
+
+    class Category(models.TextChoices):
+        VEGETABLE = "200", "Vegetables"
+        FRUIT = "400", "Fruit"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    product_class_code = models.CharField(
+        max_length=2,
+        choices=ProductClass.choices,
+        default=ProductClass.RETAIL,
+    )
+    product_class_name = models.CharField(max_length=100)
+    category_code = models.CharField(max_length=3, choices=Category.choices)
+    category_name = models.CharField(max_length=100)
+    item_code = models.CharField(
+        max_length=32,
+        validators=[RegexValidator(DIGIT_CODE_PATTERN)],
+    )
+    item_name = models.CharField(max_length=200)
+    variety_code = models.CharField(
+        max_length=32,
+        validators=[RegexValidator(DIGIT_CODE_PATTERN)],
+    )
+    variety_name = models.CharField(max_length=200)
+    grade_code = models.CharField(
+        max_length=32,
+        validators=[RegexValidator(DIGIT_CODE_PATTERN)],
+    )
+    grade_name = models.CharField(max_length=200)
+    raw_unit = models.CharField(max_length=64)
+    raw_unit_size = models.CharField(max_length=64)
+    coverage_identity = models.CharField(max_length=128)
+    identity_evidence_revision = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=(
+                    "product_class_code",
+                    "category_code",
+                    "item_code",
+                    "variety_code",
+                    "grade_code",
+                    "raw_unit",
+                    "raw_unit_size",
+                    "coverage_identity",
+                ),
+                name="grocery_series_semantic_identity_uniq",
+            ),
+            models.CheckConstraint(
+                condition=Q(product_class_code="01"),
+                name="grocery_series_product_class_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(category_code__in=("200", "400")),
+                name="grocery_series_category_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(item_code__regex=DIGIT_CODE_PATTERN)
+                    & Q(variety_code__regex=DIGIT_CODE_PATTERN)
+                    & Q(grade_code__regex=DIGIT_CODE_PATTERN)
+                ),
+                name="grocery_series_codes_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    ~Q(product_class_name="")
+                    & ~Q(category_name="")
+                    & ~Q(item_name="")
+                    & ~Q(variety_name="")
+                    & ~Q(grade_name="")
+                ),
+                name="grocery_series_names_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(raw_unit="") & ~Q(raw_unit_size=""),
+                name="grocery_series_raw_unit_nonempty",
+            ),
+            models.CheckConstraint(
+                condition=~Q(coverage_identity="") & ~Q(identity_evidence_revision=""),
+                name="grocery_series_evidence_nonempty",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return ":".join(
+            (
+                self.product_class_code,
+                self.category_code,
+                self.item_code,
+                self.variety_code,
+                self.grade_code,
+                self.raw_unit,
+                self.raw_unit_size,
+                self.coverage_identity,
+            )
+        )
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ValidationError("Price series keys are immutable.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        raise ValidationError("Price series keys are immutable.")
+
+    @classmethod
+    @transaction.atomic
+    def get_or_validate(
+        cls,
+        *,
+        product_class_code: str,
+        product_class_name: str,
+        category_code: str,
+        category_name: str,
+        item_code: str,
+        item_name: str,
+        variety_code: str,
+        variety_name: str,
+        grade_code: str,
+        grade_name: str,
+        raw_unit: str,
+        raw_unit_size: str,
+        coverage_identity: str,
+        identity_evidence_revision: str,
+    ) -> PriceSeriesKey:
+        identity = {
+            "product_class_code": product_class_code,
+            "category_code": category_code,
+            "item_code": item_code,
+            "variety_code": variety_code,
+            "grade_code": grade_code,
+            "raw_unit": raw_unit,
+            "raw_unit_size": raw_unit_size,
+            "coverage_identity": coverage_identity,
+        }
+        reviewed_fields = {
+            "product_class_name": product_class_name,
+            "category_name": category_name,
+            "item_name": item_name,
+            "variety_name": variety_name,
+            "grade_name": grade_name,
+            "identity_evidence_revision": identity_evidence_revision,
+        }
+        series, _ = cls.objects.get_or_create(**identity, defaults=reviewed_fields)
+        if any(getattr(series, field) != value for field, value in reviewed_fields.items()):
+            raise ValidationError(
+                "Price series display identity or evidence revision drifted for an existing "
+                "semantic identity."
+            )
+        return series
 
 
 def ordered_page_manifest_sha256(receipts: Sequence[PageReceipt]) -> str:

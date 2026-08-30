@@ -307,6 +307,13 @@ input[aria-invalid="true"] {
   font-weight: 750;
 }
 
+.breadcrumb a,
+.provenance a {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+}
+
 .button,
 .chip {
   display: inline-flex;
@@ -730,6 +737,12 @@ input[aria-invalid="true"] {
 .error-page p:not(.eyebrow) {
   max-width: var(--measure);
   color: var(--color-muted);
+}
+
+@media (max-width: 39.999rem) {
+  .breadcrumb li[aria-current="page"] {
+    display: none;
+  }
 }
 
 @media (min-width: 40rem) {

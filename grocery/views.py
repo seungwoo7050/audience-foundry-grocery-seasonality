@@ -31,6 +31,13 @@ _QUERY_ERROR_MESSAGES: Final = {
     "max_length": f"검색어는 {QUERY_MAX_LENGTH}자 이하여야 합니다.",
     "unsafe": "검색어에는 줄바꿈이나 제어 문자를 사용할 수 없습니다.",
 }
+_QA_STATE_MESSAGES: Final = {
+    "loading": "검토되어 공개된 조사값을 확인하고 있습니다.",
+    "empty": "검색어를 줄이거나 다른 부류를 선택해 보세요.",
+    "unavailable": "현재 공개할 수 있는 검토 완료 자료가 없습니다.",
+    "stale": "마지막 검토 자료를 표시하며 새 수집 상태를 확인하고 있습니다.",
+    "server_error": "잠시 후 다시 시도해 주세요.",
+}
 
 
 @require_safe
@@ -153,7 +160,7 @@ def qa_catalog_state(request: HttpRequest, state: str) -> HttpResponse:
         {
             "qa_preview": True,
             "catalog_state": state,
-            "status_message": "화면 상태와 긴 한국어 표시를 검수하는 로컬 전용 자료입니다.",
+            "status_message": _QA_STATE_MESSAGES[state],
             "retry_url": request.path,
             "results": _qa_results() if state == "stale" else [],
             "result_count_label": "공개 항목 1개" if state == "stale" else "공개 항목 0개",
@@ -173,7 +180,7 @@ def qa_detail_state(request: HttpRequest, state: str) -> HttpResponse:
         "home_url": reverse("grocery:catalog"),
         "catalog_url": reverse("grocery:catalog"),
         "detail_state": state,
-        "status_message": "화면 상태와 긴 한국어 표시를 검수하는 로컬 전용 자료입니다.",
+        "status_message": _QA_STATE_MESSAGES[state],
         "retry_url": request.path,
         "series": {
             "category_label": "채소류",

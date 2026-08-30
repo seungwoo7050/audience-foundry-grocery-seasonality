@@ -18,6 +18,20 @@ digest를 함께 고정한다. 이 고지는 각 upstream license 원문을 대�
 | PostgreSQL official image | `18.6` | local DB·migration·restore rehearsal | `docker.io/library/postgres` | PostgreSQL License 및 image 내 고지 |
 | uv | `0.12.6` | Python·dependency·lock 실행 도구 | `github.com/astral-sh/uv` | Apache-2.0 OR MIT |
 
+개발·검증 환경에는 다음 직접 도구를 사용한다. 이들은 production dependency group에
+포함되지 않는다.
+
+| 구성 요소 | 고정 버전 | 사용 목적 | license |
+|---|---:|---|---|
+| django-stubs | `6.1.0` | Django type checking | MIT |
+| mypy | `2.3.1` | static type check | MIT |
+| pip-audit | `2.10.1` | Python vulnerability scan | Apache-2.0 |
+| pip-licenses | `5.5.5` | 설치 dependency license inventory | MIT |
+| pytest | `9.1.1` | test runner | MIT |
+| pytest-cov | `7.1.0` | coverage integration | MIT |
+| pytest-django | `4.14.0` | Django test integration | BSD-3-Clause |
+| Ruff | `0.16.5` | formatter·linter | MIT |
+
 PostgreSQL image index digest는
 `sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280`다.
 `psycopg-binary`는 local candidate의 재현성을 위해 사용하며 bundle의 libpq·OpenSSL 등

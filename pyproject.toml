@@ -11,3 +11,45 @@ dependencies = [
 [tool.uv]
 package = false
 required-version = "==0.12.6"
+
+[dependency-groups]
+dev = [
+    "django-stubs==6.1.0",
+    "mypy==2.3.1",
+    "pip-audit==2.10.1",
+    "pip-licenses==5.5.5",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "pytest-django==4.14.0",
+    "ruff==0.16.5",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings"
+addopts = "-ra --strict-markers"
+python_files = ["test_*.py", "tests.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["B", "DJ", "E", "F", "I", "S", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["S101", "S105", "S106"]
+"**/migrations/**" = ["E501"]
+
+[tool.mypy]
+check_untyped_defs = true
+disallow_any_generics = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+plugins = ["mypy_django_plugin.main"]
+python_version = "3.14"
+strict_equality = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[tool.django-stubs]
+django_settings_module = "config.settings"

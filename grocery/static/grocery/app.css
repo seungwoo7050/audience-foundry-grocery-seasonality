@@ -283,6 +283,21 @@ input[aria-invalid="true"] {
   color: #68141a;
 }
 
+.form-error__content {
+  min-width: 0;
+}
+
+.form-error__content p {
+  margin-bottom: 0.25rem;
+}
+
+.form-error__link {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  font-weight: 750;
+}
+
 .button,
 .chip {
   display: inline-flex;
@@ -338,11 +353,17 @@ input[aria-invalid="true"] {
   border-color: var(--color-border);
   background: var(--color-surface);
   color: var(--color-text);
+  gap: 0.35rem;
 }
 
 .chip--selected {
   border-color: var(--color-brand-strong);
   background: var(--color-brand-soft);
+}
+
+.chip__selected-mark {
+  flex: 0 0 auto;
+  font-weight: 900;
 }
 
 .state-notice {
@@ -396,6 +417,7 @@ input[aria-invalid="true"] {
 .section-heading {
   display: flex;
   min-width: 0;
+  flex-wrap: wrap;
   align-items: baseline;
   justify-content: space-between;
   gap: 1rem;
@@ -417,6 +439,7 @@ input[aria-invalid="true"] {
 }
 
 .result-count {
+  max-width: 100%;
   flex: 0 0 auto;
   color: var(--color-muted);
 }

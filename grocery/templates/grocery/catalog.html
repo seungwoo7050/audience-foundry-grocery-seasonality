@@ -17,7 +17,10 @@
     {% if query_error %}
       <div id="search-error" class="form-error" role="alert">
         <span aria-hidden="true">!</span>
-        <span><strong>입력 확인:</strong> {{ query_error }}</span>
+        <div class="form-error__content">
+          <p><strong>입력 확인:</strong> {{ query_error }}</p>
+          <a class="form-error__link" href="#catalog-query">검색어 입력으로 이동</a>
+        </div>
       </div>
     {% endif %}
     <form class="search-form" action="{{ form_action|default:'' }}" method="get" role="search">
@@ -51,7 +54,10 @@
                 class="chip{% if category.selected %} chip--selected{% endif %}"
                 href="{{ category.url }}"
                 {% if category.selected %}aria-current="page"{% endif %}
-              >{{ category.label }}</a>
+              >
+                {% if category.selected %}<span class="chip__selected-mark" aria-hidden="true">✓</span>{% endif %}
+                <span>{{ category.label }}</span>
+              </a>
             </li>
           {% endfor %}
         </ul>

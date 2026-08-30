@@ -114,7 +114,9 @@ def detail_context(**overrides: object) -> dict[str, object]:
             "source_date_label": "2026년 8월 29일",
             "coverage_label": "KAMIS 소매 조사 22개 도시 지역 전체 집계",
             "checked_at_label": "2026년 8월 30일 09:00",
+            "checked_at_iso": "2026-08-30T09:00:00+09:00",
             "reviewed_at_label": "2026년 8월 30일 09:30",
+            "reviewed_at_iso": "2026-08-30T09:30:00+09:00",
             "freshness_state": "current",
             "freshness_label": "공개 조사일 확인됨",
         },
@@ -133,6 +135,7 @@ def test_catalog_renders_semantic_search_and_long_identity() -> None:
     assert '<label for="catalog-query">공식 품목명</label>' in html
     assert 'name="q"' in html
     assert 'aria-current="page"' in html
+    assert '<span class="chip__selected-mark" aria-hidden="true">✓</span>' in html
     assert "아주긴한국어공식품목명이줄바꿈되어야하는배추" in html
     assert "아주긴원문판매단위표시 포기 × 1" in html
     assert "공개 조사일 확인됨" in html
@@ -148,6 +151,7 @@ def test_catalog_validation_error_is_associated_with_input() -> None:
     assert 'role="alert"' in html
     assert 'aria-invalid="true"' in html
     assert 'aria-describedby="catalog-query-hint search-error"' in html
+    assert 'href="#catalog-query">검색어 입력으로 이동</a>' in html
     assert "검색어는 80자 이하여야 합니다." in html
 
 
@@ -192,6 +196,8 @@ def test_detail_renders_exact_identity_comparisons_and_provenance() -> None:
     assert "source가 비교 기준일을 별도로 제공하지 않음" in html
     assert "데이터셋 15156063" in html
     assert "공개 검토일" in html
+    assert '<time datetime="2026-08-29">' in html
+    assert '<time datetime="2026-08-30T09:00:00+09:00">' in html
 
 
 def test_detail_direction_is_not_conveyed_by_symbol_or_color_alone() -> None:

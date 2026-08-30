@@ -121,10 +121,31 @@
             {% if provenance.dataset_id %}<span class="metadata-detail">데이터셋 {{ provenance.dataset_id }}</span>{% endif %}
           </dd>
         </div>
-        <div><dt>조사일</dt><dd>{{ provenance.source_date_label }}</dd></div>
+        <div>
+          <dt>조사일</dt>
+          <dd>
+            {% if provenance.source_date_iso %}<time datetime="{{ provenance.source_date_iso }}">{% endif %}
+            {{ provenance.source_date_label }}
+            {% if provenance.source_date_iso %}</time>{% endif %}
+          </dd>
+        </div>
         <div><dt>조사범위</dt><dd>{{ provenance.coverage_label }}</dd></div>
-        <div><dt>마지막 확인</dt><dd>{{ provenance.checked_at_label }}</dd></div>
-        <div><dt>공개 검토일</dt><dd>{{ provenance.reviewed_at_label }}</dd></div>
+        <div>
+          <dt>마지막 확인</dt>
+          <dd>
+            {% if provenance.checked_at_iso %}<time datetime="{{ provenance.checked_at_iso }}">{% endif %}
+            {{ provenance.checked_at_label }}
+            {% if provenance.checked_at_iso %}</time>{% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt>공개 검토일</dt>
+          <dd>
+            {% if provenance.reviewed_at_iso %}<time datetime="{{ provenance.reviewed_at_iso }}">{% endif %}
+            {{ provenance.reviewed_at_label }}
+            {% if provenance.reviewed_at_iso %}</time>{% endif %}
+          </dd>
+        </div>
         <div>
           <dt>자료 상태</dt>
           <dd>

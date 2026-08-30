@@ -119,6 +119,15 @@ h3 {
   padding-block: clamp(2rem, 7vw, 5rem);
 }
 
+.qa-notice {
+  margin-bottom: 1.5rem;
+  padding: 0.65rem 0.8rem;
+  border: 2px dashed var(--color-warning);
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  font-weight: 800;
+}
+
 .skip-link {
   position: fixed;
   z-index: 100;

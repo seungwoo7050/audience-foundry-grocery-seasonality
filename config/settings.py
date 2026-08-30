@@ -19,6 +19,19 @@ def env_list(name: str, default: str) -> list[str]:
     return [item.strip() for item in os.environ.get(name, default).split(",") if item.strip()]
 
 
+def env_positive_int(name: str, default: int, *, maximum: int) -> int:
+    raw_value = os.environ.get(name)
+    if raw_value is None:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        raise ImproperlyConfigured(f"{name.lower()}_invalid") from None
+    if value < 1 or value > maximum:
+        raise ImproperlyConfigured(f"{name.lower()}_invalid")
+    return value
+
+
 def database_config() -> dict[str, object]:
     value = os.environ.get(
         "DATABASE_URL",
@@ -166,6 +179,12 @@ SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
 
 DEPLOY_VERSION = os.environ.get("DEPLOY_VERSION", "0000000")
+KAMIS_CONFIRMATION_MAX_AGE_HOURS = env_positive_int(
+    "KAMIS_CONFIRMATION_MAX_AGE_HOURS",
+    36,
+    maximum=168,
+)
+QA_STATE_PREVIEWS_ENABLED = DEBUG and env_bool("QA_STATE_PREVIEWS_ENABLED", False)
 
 LOGGING = {
     "version": 1,

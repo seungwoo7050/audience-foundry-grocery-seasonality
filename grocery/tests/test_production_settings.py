@@ -3,7 +3,7 @@ from collections.abc import Mapping, Sequence
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
-from config.settings import validate_production_environment
+from config.settings import env_positive_int, validate_production_environment
 
 _SAFE_SECRET = "x" * 50
 _SAFE_HOSTS = ("prices.example",)
@@ -154,3 +154,12 @@ def test_validation_error_never_reflects_supplied_values() -> None:
         )
 
     assert marker not in str(caught.value)
+
+
+def test_positive_integer_environment_bound_is_explicit() -> None:
+    assert env_positive_int("MISSING_TEST_VALUE", 36, maximum=168) == 36
+
+    with pytest.raises(ImproperlyConfigured, match="^bounded_test_value_invalid$"):
+        with pytest.MonkeyPatch.context() as monkeypatch:
+            monkeypatch.setenv("BOUNDED_TEST_VALUE", "0")
+            env_positive_int("BOUNDED_TEST_VALUE", 36, maximum=168)

@@ -25,6 +25,9 @@
     </header>
 
     <main id="main-content" class="page-shell page-main" tabindex="-1">
+      {% if qa_preview %}
+        <p class="qa-notice" role="note">로컬 화면 상태 검수용 미리보기</p>
+      {% endif %}
       {% block content %}{% endblock %}
     </main>
 

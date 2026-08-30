@@ -6,9 +6,13 @@ import pytest
 from django.core.exceptions import ValidationError
 
 from grocery.models import FetchAttempt, PageReceipt, SourceArtifact, SourceConfiguration
-from grocery.source.client import KamisFetchResult
+from grocery.source.client import KamisFetchResult, KamisTransportError
 from grocery.source.client import PageReceipt as ClientPageReceipt
-from grocery.source.persistence import complete_kamis_fetch, start_kamis_fetch
+from grocery.source.persistence import (
+    complete_kamis_fetch,
+    fail_kamis_fetch,
+    start_kamis_fetch,
+)
 from grocery.tests.test_acquisition_models import create_source_configuration
 
 pytestmark = pytest.mark.django_db
@@ -156,3 +160,81 @@ def test_completed_replay_conflict_fails_closed_without_echoing_rows() -> None:
         complete_kamis_fetch(attempt.id, make_result(second_hash="c" * 64))
 
     assert "row" not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    ("error", "state", "failure_class"),
+    [
+        (
+            KamisTransportError("retry_exhausted", http_status=429),
+            FetchAttempt.State.RETRYABLE_FAILED,
+            FetchAttempt.FailureClass.HTTP_429,
+        ),
+        (
+            KamisTransportError("retry_exhausted", http_status=503),
+            FetchAttempt.State.RETRYABLE_FAILED,
+            FetchAttempt.FailureClass.HTTP_5XX,
+        ),
+        (
+            KamisTransportError("retry_exhausted", provider_result_code="-5"),
+            FetchAttempt.State.RETRYABLE_FAILED,
+            FetchAttempt.FailureClass.PROVIDER_TRANSIENT,
+        ),
+        (
+            KamisTransportError("terminal_http_status", http_status=401),
+            FetchAttempt.State.TERMINAL_FAILED,
+            FetchAttempt.FailureClass.AUTHENTICATION,
+        ),
+        (
+            KamisTransportError("page_too_large"),
+            FetchAttempt.State.TERMINAL_FAILED,
+            FetchAttempt.FailureClass.RESPONSE_LIMIT,
+        ),
+        (
+            KamisTransportError("unexpected_envelope_keys"),
+            FetchAttempt.State.TERMINAL_FAILED,
+            FetchAttempt.FailureClass.SCHEMA,
+        ),
+        (
+            KamisTransportError("declared_total_changed"),
+            FetchAttempt.State.TERMINAL_FAILED,
+            FetchAttempt.FailureClass.RECONCILIATION,
+        ),
+    ],
+)
+def test_failure_finalization_records_only_safe_codes(
+    error: KamisTransportError,
+    state: str,
+    failure_class: str,
+) -> None:
+    source = create_source_configuration()
+    attempt = start_kamis_fetch(source.id)
+
+    failed = fail_kamis_fetch(attempt.id, error)
+
+    assert failed.state == state
+    assert failed.failure_class == failure_class
+    assert failed.failure_code == error.code.upper()
+    assert failed.artifact_id is None
+    assert not failed.page_receipts.exists()
+    assert "serviceKey" not in failed.failure_code
+
+
+def test_failure_finalization_cannot_overwrite_a_terminal_attempt() -> None:
+    source = create_source_configuration()
+    attempt = start_kamis_fetch(source.id)
+    fail_kamis_fetch(attempt.id, KamisTransportError("tls_verification_failed"))
+
+    with pytest.raises(ValidationError, match="started"):
+        fail_kamis_fetch(attempt.id, KamisTransportError("retry_exhausted"))
+
+
+def test_unknown_failure_code_is_not_copied_to_a_receipt_or_error_field() -> None:
+    source = create_source_configuration()
+    attempt = start_kamis_fetch(source.id)
+    marker = "KAMIS_API_KEY_synthetic_marker"
+
+    failed = fail_kamis_fetch(attempt.id, KamisTransportError(marker))
+
+    assert failed.failure_code == "UNCLASSIFIED_TRANSPORT_ERROR"
+    assert marker not in failed.failure_code

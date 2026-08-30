@@ -17,7 +17,7 @@ from grocery.models import (
     build_source_artifact,
     ordered_page_manifest_sha256,
 )
-from grocery.source.client import REDACTED_REQUEST_SHAPE, KamisFetchResult
+from grocery.source.client import REDACTED_REQUEST_SHAPE, KamisFetchResult, KamisTransportError
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,6 +25,69 @@ class CompletedKamisFetch:
     attempt: FetchAttempt
     artifact: SourceArtifact
     artifact_created: bool
+
+
+_RESPONSE_LIMIT_CODES = frozenset(
+    {
+        "call_budget_exceeded",
+        "page_budget_exceeded",
+        "page_too_large",
+    }
+)
+_RECONCILIATION_CODES = frozenset(
+    {
+        "declared_page_mismatch",
+        "declared_page_size_mismatch",
+        "declared_total_changed",
+        "page_row_count_mismatch",
+        "row_total_exceeded",
+    }
+)
+_SCHEMA_CODES = frozenset(
+    {
+        "invalid_json",
+        "invalid_envelope",
+        "invalid_header",
+        "invalid_provider_header",
+        "invalid_body",
+        "unexpected_data_type",
+        "invalid_declared_page",
+        "invalid_declared_page_size",
+        "invalid_declared_total",
+        "invalid_items_envelope",
+        "items_not_array",
+        "item_not_object",
+        "unexpected_envelope_keys",
+        "unexpected_content_type",
+        "missing_content_type",
+        "unexpected_charset",
+        "missing_charset",
+        "invalid_content_length",
+        "response_body_not_bytes",
+    }
+)
+_KNOWN_TRANSPORT_CODES = (
+    _RESPONSE_LIMIT_CODES
+    | _RECONCILIATION_CODES
+    | _SCHEMA_CODES
+    | frozenset(
+        {
+            "invalid_http_status",
+            "invalid_page_size",
+            "invalid_response_state",
+            "invalid_retry_state",
+            "redirect_not_allowed",
+            "request_parameter_allowlist_violation",
+            "retry_exhausted",
+            "service_key_missing",
+            "terminal_http_status",
+            "terminal_provider_error",
+            "tls_error",
+            "tls_verification_failed",
+            "transport_internal_error",
+        }
+    )
+)
 
 
 @transaction.atomic
@@ -85,6 +148,61 @@ def complete_kamis_fetch(
         raise ValidationError("The persisted artifact manifest differs from the client result.")
     attempt.refresh_from_db()
     return CompletedKamisFetch(attempt=attempt, artifact=artifact, artifact_created=created)
+
+
+@transaction.atomic
+def fail_kamis_fetch(
+    attempt_id: uuid.UUID,
+    error: KamisTransportError,
+) -> FetchAttempt:
+    """Finalize a failed attempt using only the transport's redacted error fields."""
+
+    attempt = FetchAttempt.objects.select_for_update().get(pk=attempt_id)
+    if attempt.state != FetchAttempt.State.STARTED:
+        raise ValidationError("Only a started fetch attempt can be failed.")
+
+    state, failure_class = _classify_transport_failure(error)
+    attempt.state = state
+    attempt.completed_at = timezone.now()
+    attempt.failure_class = failure_class
+    attempt.failure_code = (
+        error.code.upper()
+        if error.code in _KNOWN_TRANSPORT_CODES
+        else "UNCLASSIFIED_TRANSPORT_ERROR"
+    )
+    attempt.save()
+    return attempt
+
+
+def _classify_transport_failure(
+    error: KamisTransportError,
+) -> tuple[FetchAttempt.State, FetchAttempt.FailureClass]:
+    if error.code == "retry_exhausted":
+        if error.http_status == 429:
+            failure_class = FetchAttempt.FailureClass.HTTP_429
+        elif error.http_status is not None and 500 <= error.http_status < 600:
+            failure_class = FetchAttempt.FailureClass.HTTP_5XX
+        elif error.provider_result_code is not None:
+            failure_class = FetchAttempt.FailureClass.PROVIDER_TRANSIENT
+        else:
+            failure_class = FetchAttempt.FailureClass.NETWORK
+        return FetchAttempt.State.RETRYABLE_FAILED, failure_class
+
+    if error.code in _RESPONSE_LIMIT_CODES:
+        failure_class = FetchAttempt.FailureClass.RESPONSE_LIMIT
+    elif error.code in _RECONCILIATION_CODES:
+        failure_class = FetchAttempt.FailureClass.RECONCILIATION
+    elif error.code in _SCHEMA_CODES:
+        failure_class = FetchAttempt.FailureClass.SCHEMA
+    elif error.code in {"tls_error", "tls_verification_failed"}:
+        failure_class = FetchAttempt.FailureClass.NETWORK
+    elif error.code == "terminal_http_status" and error.http_status in {401, 403}:
+        failure_class = FetchAttempt.FailureClass.AUTHENTICATION
+    elif error.code == "terminal_provider_error" and error.provider_result_code == "-3":
+        failure_class = FetchAttempt.FailureClass.AUTHENTICATION
+    else:
+        failure_class = FetchAttempt.FailureClass.INVALID_REQUEST
+    return FetchAttempt.State.TERMINAL_FAILED, failure_class
 
 
 def _validate_result_budget(

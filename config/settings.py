@@ -58,6 +58,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "grocery.observability.RequestIdMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -112,3 +113,37 @@ SECURE_HSTS_PRELOAD = not DEBUG
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
+
+DEPLOY_VERSION = os.environ.get("DEPLOY_VERSION", "0000000")
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "filters": {
+        "observability_allowlist": {
+            "()": "grocery.observability.ObservabilityAllowlistFilter",
+        }
+    },
+    "formatters": {
+        "structured_json": {
+            "()": "grocery.observability.StructuredJsonFormatter",
+        }
+    },
+    "handlers": {
+        "null": {"class": "logging.NullHandler"},
+        "structured_console": {
+            "class": "logging.StreamHandler",
+            "filters": ["observability_allowlist"],
+            "formatter": "structured_json",
+        },
+    },
+    "loggers": {
+        "django.request": {"handlers": ["null"], "propagate": False},
+        "django.server": {"handlers": ["null"], "propagate": False},
+        "grocery.audit": {
+            "handlers": ["structured_console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}

@@ -147,6 +147,12 @@ def _validate_revision(revision: PublicationRevision) -> None:
     _contract(decision.parse_run_id == generation.id)
     _contract(decision.source_configuration_id == source.id)
     _contract(decision.approved_mode == SourceConfiguration.PublicationMode.RECENT_COMPARISON)
+    effective_state_changed_at, effective_rights_confirmed_at = source.effective_gate_timestamps()
+    _contract(source.state == SourceConfiguration.State.ACTIVE)
+    if effective_rights_confirmed_at is None:
+        raise _ContractError
+    _contract(effective_state_changed_at <= decision.decided_at)
+    _contract(effective_rights_confirmed_at <= decision.decided_at)
     _contract(source.publication_mode == SourceConfiguration.PublicationMode.RECENT_COMPARISON)
     _contract(decision.approved_mode == source.publication_mode)
     _contract(decision.approved_coverage_identity == source.coverage_identity)
@@ -265,6 +271,7 @@ def _inspect_in_read_only_snapshot() -> _AvailableState | _UnavailableState:
             PublicationChannel.objects.select_related(
                 "current_revision__generation",
                 "current_revision__review_decision__source_configuration",
+                "current_revision__review_decision__source_configuration__gate_timestamp_correction",
             )
             .filter(pk=RECENT_RETAIL_CHANNEL)
             .first()

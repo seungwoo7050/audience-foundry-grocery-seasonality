@@ -29,6 +29,9 @@ from grocery.tests.test_retail_price_snapshot_models import (
     create_snapshot,
     create_validated_parse_run,
 )
+from grocery.tests.test_source_configuration import (
+    create_legacy_source_with_gate_timestamp_correction,
+)
 
 
 def create_reviewer(*, active: bool = True, permitted: bool = True) -> Any:
@@ -235,6 +238,34 @@ class ReviewDecisionTests(TestCase):
                     parse_run=parse_run,
                 )
             )
+
+    def test_review_fails_closed_when_gate_correction_no_longer_matches_base_row(self) -> None:
+        corrected_source = create_legacy_source_with_gate_timestamp_correction()
+        SourceConfiguration.objects.filter(pk=corrected_source.pk).update(
+            state_changed_at=timezone.now()
+        )
+        _unrelated_source, parse_run = complete_generation()
+        reviewer = create_reviewer()
+
+        with self.assertRaisesMessage(ValidationError, "does not match"):
+            record(
+                **review_arguments(
+                    reviewer=reviewer,
+                    source_configuration=corrected_source,
+                    parse_run=parse_run,
+                )
+            )
+
+        values = review_arguments(
+            reviewer=reviewer,
+            source_configuration=corrected_source,
+            parse_run=parse_run,
+        )
+        values.pop("actor")
+        values["id"] = values.pop("decision_id")
+        values["reviewer_id"] = reviewer.pk
+        with self.assertRaises(DatabaseError), transaction.atomic():
+            ReviewDecision.objects.bulk_create([ReviewDecision(**values)])
 
     def test_reject_allows_only_completed_parse_and_has_no_approved_fields(self) -> None:
         reviewer = create_reviewer()

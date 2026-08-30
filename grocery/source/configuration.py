@@ -6,15 +6,17 @@ credential.  It deliberately does not import or invoke the credential loader.
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime
 from types import MappingProxyType
 from typing import Final
 from zoneinfo import ZoneInfo
 
 from django.db import transaction
 
-from grocery.models import SourceConfiguration
+from grocery.models import (
+    SOURCE_GATE_CONFIGURATION_ID,
+    SOURCE_GATE_DECISION_RECORDED_AT,
+    SourceConfiguration,
+)
 from grocery.source.client import (
     CONNECT_READ_TIMEOUT_SECONDS,
     KAMIS_ENDPOINT,
@@ -33,16 +35,8 @@ KAMIS_ENDPOINT_HOST: Final = "apis.data.go.kr"
 KAMIS_ENDPOINT_PATH: Final = "/B552845/recent/price"
 KAMIS_LOGICAL_SECRET_NAME: Final = "KAMIS_API_KEY"  # noqa: S105 - logical reference only
 KAMIS_RIGHTS_EVIDENCE_LOCATOR: Final = "https://www.data.go.kr/data/15156063/openapi.do"
-KAMIS_GATE_CONFIRMED_AT: Final = datetime(
-    2026,
-    8,
-    30,
-    tzinfo=ZoneInfo("Asia/Seoul"),
-)
-KAMIS_SOURCE_CONFIGURATION_ID: Final = uuid.uuid5(
-    uuid.NAMESPACE_URL,
-    f"{KAMIS_RIGHTS_EVIDENCE_LOCATOR}#{KAMIS_CONFIGURATION_REVISION}",
-)
+KAMIS_GATE_CONFIRMED_AT: Final = SOURCE_GATE_DECISION_RECORDED_AT.astimezone(ZoneInfo("Asia/Seoul"))
+KAMIS_SOURCE_CONFIGURATION_ID: Final = SOURCE_GATE_CONFIGURATION_ID
 
 _EXPECTED_CONTRACT_FIELDS: Final = MappingProxyType(
     {
@@ -111,11 +105,18 @@ def bootstrap_kamis_source_configuration() -> SourceConfiguration:
             configuration_revision=KAMIS_CONFIGURATION_REVISION,
             defaults=defaults,
         )
+        effective_state_changed_at, effective_rights_confirmed_at = (
+            source.effective_gate_timestamps()
+        )
+        effective_fields = {
+            "state_changed_at": effective_state_changed_at,
+            "rights_confirmed_at": effective_rights_confirmed_at,
+        }
         drifted_fields = tuple(
             sorted(
                 field_name
                 for field_name, expected_value in _EXPECTED_CONTRACT_FIELDS.items()
-                if getattr(source, field_name) != expected_value
+                if effective_fields.get(field_name, getattr(source, field_name)) != expected_value
             )
         )
         if drifted_fields:

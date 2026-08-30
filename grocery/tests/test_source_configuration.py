@@ -1,8 +1,16 @@
+import uuid
 from unittest.mock import patch
 
 import pytest
+from django.core.exceptions import ValidationError
+from django.db import DatabaseError, transaction
 
-from grocery.models import SourceConfiguration
+from grocery.models import (
+    FetchAttempt,
+    SourceConfiguration,
+    SourceConfigurationGateTimestampCorrection,
+)
+from grocery.source import configuration
 from grocery.source.client import MAX_CALLS, MAX_PAGE_BYTES, MAX_PAGES
 from grocery.source.configuration import (
     KAMIS_CONFIGURATION_REVISION,
@@ -20,6 +28,37 @@ from grocery.source.kamis import KAMIS_RETAIL_COVERAGE_IDENTITY
 from grocery.source.registry import IDENTITY_EVIDENCE_REVISION, OFFICIAL_DOCS_ZIP_SHA256
 
 pytestmark = pytest.mark.django_db
+
+
+def create_legacy_source_with_gate_timestamp_correction() -> SourceConfiguration:
+    legacy_timestamp = KAMIS_GATE_CONFIRMED_AT.replace(hour=0, minute=0, second=0)
+    expected = dict(configuration._EXPECTED_CONTRACT_FIELDS)
+    expected["state_changed_at"] = legacy_timestamp
+    expected["rights_confirmed_at"] = legacy_timestamp
+    expected.pop("dataset_id")
+    expected.pop("configuration_revision")
+    source = SourceConfiguration.objects.create(
+        id=KAMIS_SOURCE_CONFIGURATION_ID,
+        dataset_id=KAMIS_DATASET_ID,
+        configuration_revision=KAMIS_CONFIGURATION_REVISION,
+        **expected,
+    )
+    FetchAttempt.objects.create(
+        source_configuration=source,
+        acquisition_run_id=uuid.uuid4(),
+        attempt_ordinal=1,
+        started_at=source.created_at,
+        redacted_request_shape=(
+            "GET endpoint parameters=[pageNo,numOfRows,returnType,serviceKey:<redacted>]"
+        ),
+    )
+    SourceConfigurationGateTimestampCorrection.objects.create(
+        source_configuration=source,
+        original_state_changed_at=legacy_timestamp,
+        original_rights_confirmed_at=legacy_timestamp,
+        effective_gate_decision_recorded_at=KAMIS_GATE_CONFIRMED_AT,
+    )
+    return source
 
 
 def test_bootstrap_seals_the_approved_a_path_contract_without_loading_a_secret() -> None:
@@ -62,6 +101,7 @@ def test_bootstrap_seals_the_approved_a_path_contract_without_loading_a_secret()
     assert source.rights_evidence_sha256 == OFFICIAL_DOCS_ZIP_SHA256
     assert source.rights_confirmed_at == KAMIS_GATE_CONFIRMED_AT
     assert source.raw_retention == SourceConfiguration.RawRetention.HASH_ONLY
+    assert not SourceConfigurationGateTimestampCorrection.objects.exists()
 
 
 def test_bootstrap_is_idempotent_for_the_same_sealed_revision() -> None:
@@ -70,6 +110,42 @@ def test_bootstrap_is_idempotent_for_the_same_sealed_revision() -> None:
 
     assert second.pk == first.pk
     assert SourceConfiguration.objects.count() == 1
+
+
+def test_bootstrap_accepts_the_reviewed_append_only_legacy_timestamp_correction() -> None:
+    source = create_legacy_source_with_gate_timestamp_correction()
+    legacy_timestamp = source.state_changed_at
+
+    bootstrapped = bootstrap_kamis_source_configuration()
+
+    assert bootstrapped.pk == source.pk
+    assert bootstrapped.state_changed_at == legacy_timestamp
+    assert bootstrapped.rights_confirmed_at == legacy_timestamp
+    assert bootstrapped.effective_gate_timestamps() == (
+        KAMIS_GATE_CONFIRMED_AT,
+        KAMIS_GATE_CONFIRMED_AT,
+    )
+
+
+def test_gate_timestamp_correction_is_database_append_only_and_effective_helper_fails_closed() -> (
+    None
+):
+    source = create_legacy_source_with_gate_timestamp_correction()
+    correction = source.gate_timestamp_correction
+
+    with pytest.raises(DatabaseError), transaction.atomic():
+        SourceConfigurationGateTimestampCorrection.objects.filter(pk=correction.pk).update(
+            reason_code="GATE_TIMESTAMP_DATE_PRECISION_CORRECTED"
+        )
+    with pytest.raises(DatabaseError), transaction.atomic():
+        SourceConfigurationGateTimestampCorrection.objects.filter(pk=correction.pk).delete()
+
+    SourceConfiguration.objects.filter(pk=source.pk).update(
+        state_changed_at=KAMIS_GATE_CONFIRMED_AT
+    )
+    source.refresh_from_db()
+    with pytest.raises(ValidationError, match="does not match"):
+        source.effective_gate_timestamps()
 
 
 def test_bootstrap_fails_closed_on_same_revision_field_drift_without_values() -> None:

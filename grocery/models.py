@@ -3,7 +3,7 @@ import json
 import re
 import uuid
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -36,6 +36,12 @@ from grocery.pricing import (
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 DIGIT_CODE_PATTERN = r"^[0-9]+$"
+SOURCE_GATE_EVIDENCE_COMMIT_SHA = "d23e5707e1fc3bf6e032d459b149b946b0451e00"
+SOURCE_GATE_DECISION_RECORDED_AT = datetime(2026, 8, 30, 2, 23, 44, tzinfo=UTC)
+SOURCE_GATE_ORIGINAL_DATE_TIMESTAMP = datetime(2026, 8, 29, 15, 0, 0, tzinfo=UTC)
+SOURCE_GATE_CONFIGURATION_ID = uuid.UUID("e7c14e61-8c56-5758-b1ea-1ea87ea60a41")
+SOURCE_GATE_DATASET_ID = "15156063"
+SOURCE_GATE_CONFIGURATION_REVISION = "kamis-15156063-recent-comparison-v1"
 sha256_validator = RegexValidator(
     regex=SHA256_PATTERN,
     message="Enter a lowercase 64-character SHA-256 digest.",
@@ -340,6 +346,138 @@ class SourceConfiguration(models.Model):
                 self.coverage_identity,
             )
         )
+
+    def effective_gate_timestamps(self) -> tuple[datetime, datetime | None]:
+        """Return the immutable base timestamps or their one reviewed correction."""
+
+        try:
+            correction = self.gate_timestamp_correction
+        except SourceConfigurationGateTimestampCorrection.DoesNotExist:
+            return self.state_changed_at, self.rights_confirmed_at
+        if (
+            correction.original_state_changed_at != self.state_changed_at
+            or correction.original_rights_confirmed_at != self.rights_confirmed_at
+        ):
+            raise ValidationError("Source gate timestamp correction does not match its base row.")
+        return (
+            correction.effective_gate_decision_recorded_at,
+            correction.effective_gate_decision_recorded_at,
+        )
+
+
+class SourceConfigurationGateTimestampCorrection(models.Model):
+    """One append-only correction for the v1 gate timestamp's original date precision."""
+
+    EVIDENCE_COMMIT_SHA = SOURCE_GATE_EVIDENCE_COMMIT_SHA
+
+    class TimestampBasis(models.TextChoices):
+        DURABLE_SOURCE_GATE_COMMIT = (
+            "DURABLE_SOURCE_GATE_COMMIT",
+            "Durable source-gate commit recorded-at upper bound",
+        )
+
+    class ReasonCode(models.TextChoices):
+        GATE_TIMESTAMP_DATE_PRECISION_CORRECTED = (
+            "GATE_TIMESTAMP_DATE_PRECISION_CORRECTED",
+            "Gate timestamp date precision corrected",
+        )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    source_configuration = models.OneToOneField(
+        SourceConfiguration,
+        on_delete=models.PROTECT,
+        related_name="gate_timestamp_correction",
+    )
+    original_state_changed_at = models.DateTimeField()
+    original_rights_confirmed_at = models.DateTimeField()
+    effective_gate_decision_recorded_at = models.DateTimeField()
+    timestamp_basis = models.CharField(
+        max_length=40,
+        choices=TimestampBasis.choices,
+        default=TimestampBasis.DURABLE_SOURCE_GATE_COMMIT,
+    )
+    evidence_commit_sha = models.CharField(
+        max_length=40,
+        default=EVIDENCE_COMMIT_SHA,
+        validators=[RegexValidator(r"^[0-9a-f]{40}$")],
+    )
+    reason_code = models.CharField(
+        max_length=48,
+        choices=ReasonCode.choices,
+        default=ReasonCode.GATE_TIMESTAMP_DATE_PRECISION_CORRECTED,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(source_configuration_id=SOURCE_GATE_CONFIGURATION_ID),
+                name="grocery_gate_time_source_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(
+                    original_state_changed_at=SOURCE_GATE_ORIGINAL_DATE_TIMESTAMP,
+                    original_rights_confirmed_at=SOURCE_GATE_ORIGINAL_DATE_TIMESTAMP,
+                ),
+                name="grocery_gate_time_original_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(timestamp_basis="DURABLE_SOURCE_GATE_COMMIT"),
+                name="grocery_gate_time_basis_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(
+                    reason_code="GATE_TIMESTAMP_DATE_PRECISION_CORRECTED",
+                ),
+                name="grocery_gate_time_reason_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(evidence_commit_sha=SOURCE_GATE_EVIDENCE_COMMIT_SHA),
+                name="grocery_gate_time_commit_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(
+                    effective_gate_decision_recorded_at=SOURCE_GATE_DECISION_RECORDED_AT,
+                ),
+                name="grocery_gate_time_effective_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(effective_gate_decision_recorded_at__gt=F("original_state_changed_at"))
+                    & Q(effective_gate_decision_recorded_at__gt=F("original_rights_confirmed_at"))
+                ),
+                name="grocery_gate_time_chronology_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.source_configuration_id}:gate-timestamp-correction"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ValidationError("Source gate timestamp corrections are append-only.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        raise ValidationError("Source gate timestamp corrections are append-only.")
+
+    def clean(self) -> None:
+        super().clean()
+        if not self.source_configuration_id:
+            return
+        source = self.source_configuration
+        if (
+            source.id != SOURCE_GATE_CONFIGURATION_ID
+            or source.dataset_id != SOURCE_GATE_DATASET_ID
+            or source.configuration_revision != SOURCE_GATE_CONFIGURATION_REVISION
+            or self.original_state_changed_at != SOURCE_GATE_ORIGINAL_DATE_TIMESTAMP
+            or self.original_rights_confirmed_at != SOURCE_GATE_ORIGINAL_DATE_TIMESTAMP
+            or self.effective_gate_decision_recorded_at != SOURCE_GATE_DECISION_RECORDED_AT
+            or self.original_state_changed_at != source.state_changed_at
+            or self.original_rights_confirmed_at != source.rights_confirmed_at
+        ):
+            raise ValidationError("Source gate timestamp correction must match its base row.")
 
 
 class SourceArtifact(models.Model):
@@ -1667,15 +1805,24 @@ class ReviewDecision(models.Model):
         source_configuration = self.source_configuration
         source_artifact = self.source_artifact
         parse_run = self.parse_run
+        effective_state_changed_at, effective_rights_confirmed_at = (
+            source_configuration.effective_gate_timestamps()
+        )
         rights_complete = all(
             (
                 source_configuration.rights_evidence_locator,
                 source_configuration.rights_evidence_sha256,
-                source_configuration.rights_confirmed_at,
+                effective_rights_confirmed_at,
             )
         )
         if source_configuration.state != SourceConfiguration.State.ACTIVE or not rights_complete:
             raise ValidationError("Review requires an active source with complete rights evidence.")
+        if (
+            effective_state_changed_at > self.decided_at
+            or effective_rights_confirmed_at is None
+            or effective_rights_confirmed_at > self.decided_at
+        ):
+            raise ValidationError("Review cannot precede the effective source gate decision.")
         if not FetchAttempt.objects.filter(
             source_configuration=source_configuration,
             artifact=source_artifact,

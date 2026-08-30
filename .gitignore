@@ -17,4 +17,6 @@ tmp/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
-
+artifacts/
+playwright-report/
+test-results/

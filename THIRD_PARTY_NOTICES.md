@@ -1,13 +1,28 @@
 # 제3자 고지
 
-이 정책 전용 기준선에는 runtime dependency, vendored third-party source, 생성된
-third-party artifact 또는 가져온 제품 구현이 없습니다.
+이 프로젝트는 아래 구성 요소를 직접 또는 전이 의존성으로 사용한다. Python package의
+artifact URL과 SHA-256은 `uv.lock`에 고정한다. container는 tag와 multi-platform index
+digest를 함께 고정한다. 이 고지는 각 upstream license 원문을 대체하지 않는다.
 
-dependency 또는 import·generated material을 도입하는 동일한 격리 commit에서 이
-파일을 갱신합니다. 정확한 version 또는 revision, upstream source, license, 사용
-목적, integrity mechanism, 재배포 의무와 수용한 advisory·compatibility risk를
-기록합니다.
+| 구성 요소 | 고정 버전 | 사용 목적 | upstream | license |
+|---|---:|---|---|---|
+| Python | `3.14.7` | application runtime | `python.org` | PSF-2.0 |
+| Django | `5.2.17` | SSR, Forms, Auth, ORM, migration | `djangoproject.com` | BSD-3-Clause |
+| Gunicorn | `23.0.0` | 고정 production WSGI process | `gunicorn.org` | MIT |
+| Psycopg | `3.3.4` | PostgreSQL driver | `psycopg.org` | LGPL-3.0-only |
+| psycopg-binary | `3.3.4` | local candidate의 self-contained libpq runtime | `psycopg.org` | LGPL-3.0-only 및 wheel 내 고지 |
+| asgiref | `3.12.1` | Django 전이 runtime | `github.com/django/asgiref` | BSD-3-Clause |
+| packaging | `26.3` | Gunicorn 전이 runtime | `github.com/pypa/packaging` | Apache-2.0 OR BSD-2-Clause |
+| sqlparse | `0.6.0` | Django 전이 runtime | `github.com/andialbrecht/sqlparse` | BSD-3-Clause |
+| tzdata | `2026.3` | Windows 조건부 timezone data | `github.com/python/tzdata` | Apache-2.0 |
+| PostgreSQL official image | `18.6` | local DB·migration·restore rehearsal | `docker.io/library/postgres` | PostgreSQL License 및 image 내 고지 |
+| uv | `0.12.6` | Python·dependency·lock 실행 도구 | `github.com/astral-sh/uv` | Apache-2.0 OR MIT |
 
-동일한 material과 정확한 revision이 실제로 존재하지 않으면 다른 Audience Foundry
-제품의 고지를 복사하지 않습니다. vulnerability scan은 license·provenance 검토를
-대체하지 않습니다.
+PostgreSQL image index digest는
+`sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280`다.
+`psycopg-binary`는 local candidate의 재현성을 위해 사용하며 bundle의 libpq·OpenSSL 등
+고지는 설치 wheel의 `licenses/`와 함께 배포한다. production platform이 system libpq를
+관리할 수 있으면 별도 호환성·license 검토 후 `psycopg[c]`로 전환하는 것은 새 기술 결정이다.
+
+프로젝트는 이 package source를 vendoring하거나 수정하지 않는다. vulnerability scan은
+license·provenance 검토를 대체하지 않으며, release gate에서 lock 전체를 다시 검사한다.

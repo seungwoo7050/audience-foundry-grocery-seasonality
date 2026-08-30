@@ -6,7 +6,7 @@ from uuid import UUID
 
 import pytest
 from django.http import HttpResponse
-from django.test import RequestFactory
+from django.test import RequestFactory, override_settings
 
 from grocery.observability import (
     OBSERVABILITY_KEYS,
@@ -156,6 +156,7 @@ def test_filter_rejects_invalid_event_and_formatter_uses_safe_fallback() -> None
     assert "\n" not in line
 
 
+@override_settings(DEPLOY_VERSION=DEPLOY_VERSION)
 def test_log_event_emits_one_line_without_normal_log_message_data() -> None:
     output = io.StringIO()
     handler = logging.StreamHandler(output)
@@ -183,6 +184,7 @@ def test_log_event_emits_one_line_without_normal_log_message_data() -> None:
     assert len(lines) == 1
     payload = json.loads(lines[0])
     assert payload["message_code"] == "review.decision.recorded"
+    assert payload["deploy_version"] == DEPLOY_VERSION
     assert payload["command_run_id"] == COMMAND_RUN_ID
     assert payload["lifecycle_id"] == LIFECYCLE_ID
     assert set(payload).issubset(OBSERVABILITY_KEYS)

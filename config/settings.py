@@ -62,6 +62,7 @@ ADMIN_ENABLED = env_bool("ADMIN_ENABLED", DEBUG)
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "local-development-only-not-for-production")
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "")
+DEPLOY_VERSION = os.environ.get("DEPLOY_VERSION", "0000000")
 
 
 def validate_production_environment(
@@ -72,6 +73,7 @@ def validate_production_environment(
     secret_key: str,
     allowed_hosts: Sequence[str],
     csrf_trusted_origins: Sequence[str],
+    deploy_version: str,
 ) -> None:
     """Reject incomplete production settings without reflecting any supplied value."""
 
@@ -95,6 +97,12 @@ def validate_production_environment(
             or parsed_origin.path not in ("", "/")
         ):
             raise ImproperlyConfigured("production_csrf_origin_invalid")
+    if (
+        "DEPLOY_VERSION" not in environment
+        or len(deploy_version) != 40
+        or any(character not in "0123456789abcdef" for character in deploy_version)
+    ):
+        raise ImproperlyConfigured("production_deploy_version_required")
     if admin_enabled:
         raise ImproperlyConfigured("production_admin_strong_auth_not_configured")
 
@@ -106,6 +114,7 @@ validate_production_environment(
     secret_key=SECRET_KEY,
     allowed_hosts=ALLOWED_HOSTS,
     csrf_trusted_origins=CSRF_TRUSTED_ORIGINS,
+    deploy_version=DEPLOY_VERSION,
 )
 
 INSTALLED_APPS = [
@@ -178,7 +187,6 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
 
-DEPLOY_VERSION = os.environ.get("DEPLOY_VERSION", "0000000")
 KAMIS_CONFIRMATION_MAX_AGE_HOURS = env_positive_int(
     "KAMIS_CONFIRMATION_MAX_AGE_HOURS",
     36,

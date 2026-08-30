@@ -8,6 +8,7 @@ from config.settings import env_positive_int, validate_production_environment
 _SAFE_SECRET = "x" * 50
 _SAFE_HOSTS = ("prices.example",)
 _SAFE_ORIGINS = ("https://prices.example",)
+_SAFE_DEPLOY_VERSION = "a" * 40
 
 
 def validate(
@@ -18,6 +19,7 @@ def validate(
     secret_key: str = _SAFE_SECRET,
     allowed_hosts: Sequence[str] = _SAFE_HOSTS,
     csrf_trusted_origins: Sequence[str] = _SAFE_ORIGINS,
+    deploy_version: str = _SAFE_DEPLOY_VERSION,
 ) -> None:
     validate_production_environment(
         environment,
@@ -26,6 +28,7 @@ def validate(
         secret_key=secret_key,
         allowed_hosts=allowed_hosts,
         csrf_trusted_origins=csrf_trusted_origins,
+        deploy_version=deploy_version,
     )
 
 
@@ -34,6 +37,7 @@ def production_environment() -> dict[str, str]:
         "DJANGO_SECRET_KEY": "present",
         "DJANGO_ALLOWED_HOSTS": "present",
         "DJANGO_CSRF_TRUSTED_ORIGINS": "present",
+        "DEPLOY_VERSION": "present",
     }
 
 
@@ -45,6 +49,7 @@ def test_debug_environment_keeps_local_development_defaults() -> None:
         secret_key="local",
         allowed_hosts=(),
         csrf_trusted_origins=(),
+        deploy_version="0000000",
     )
 
 
@@ -154,6 +159,22 @@ def test_validation_error_never_reflects_supplied_values() -> None:
         )
 
     assert marker not in str(caught.value)
+
+
+def test_production_requires_exact_full_lowercase_release_sha() -> None:
+    missing = production_environment()
+    missing.pop("DEPLOY_VERSION")
+    with pytest.raises(
+        ImproperlyConfigured,
+        match="^production_deploy_version_required$",
+    ):
+        validate(missing)
+
+    with pytest.raises(
+        ImproperlyConfigured,
+        match="^production_deploy_version_required$",
+    ):
+        validate(production_environment(), deploy_version="G" * 40)
 
 
 def test_positive_integer_environment_bound_is_explicit() -> None:

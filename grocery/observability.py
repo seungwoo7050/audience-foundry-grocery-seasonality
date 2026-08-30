@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from typing import Final, Literal, cast
 from uuid import UUID, uuid4
 
+from django.conf import settings
 from django.http import HttpRequest, HttpResponseBase
 
 type Severity = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
@@ -256,6 +257,14 @@ def log_event(
 
     if severity not in _LEVEL_BY_SEVERITY:
         raise ObservabilityValidationError("severity has an invalid value")
+    configured_deploy_version = getattr(settings, "DEPLOY_VERSION", None)
+    if (
+        deploy_version is None
+        and type(configured_deploy_version) is str
+        and _DEPLOY_VERSION_PATTERN.fullmatch(configured_deploy_version) is not None
+    ):
+        deploy_version = configured_deploy_version
+
     event = make_observability_event(
         message_code,
         request_id=request_id if request_id is not None else current_request_id(),

@@ -2,7 +2,7 @@ import hashlib
 import json
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -12,6 +12,26 @@ from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models, transaction
 from django.db.models import F, Q
 from django.utils import timezone
+
+from grocery.pricing import (
+    ComparisonPeriod as DomainComparisonPeriod,
+)
+from grocery.pricing import (
+    PriceSnapshot as DomainPriceSnapshot,
+)
+from grocery.pricing import (
+    PriceValidationError,
+    compare_snapshot,
+)
+from grocery.pricing import (
+    ReferenceDateStatus as DomainReferenceDateStatus,
+)
+from grocery.pricing import (
+    ReferencePrice as DomainReferencePrice,
+)
+from grocery.pricing import (
+    ValueStatus as DomainValueStatus,
+)
 
 SHA256_PATTERN = r"^[0-9a-f]{64}$"
 DIGIT_CODE_PATTERN = r"^[0-9]+$"
@@ -1113,6 +1133,383 @@ class RetailPriceSnapshot(models.Model):
 
         candidate.save()
         return candidate
+
+
+class ReferencePrice(models.Model):
+    """Immutable provider reference value attached to one current-price snapshot."""
+
+    class Period(models.TextChoices):
+        WEEK = "WEEK", "One week"
+        MONTH = "MONTH", "One month"
+        YEAR = "YEAR", "One year"
+
+    class ValueStatus(models.TextChoices):
+        AVAILABLE = "AVAILABLE", "Available"
+        UNAVAILABLE = "UNAVAILABLE", "Unavailable"
+
+    class UnavailableReason(models.TextChoices):
+        SOURCE_VALUE_MISSING = "SOURCE_VALUE_MISSING", "Source value missing"
+
+    class ReferenceDateStatus(models.TextChoices):
+        SOURCE_REFERENCE_DATE_UNAVAILABLE = (
+            "SOURCE_REFERENCE_DATE_UNAVAILABLE",
+            "Source reference date unavailable",
+        )
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    snapshot = models.ForeignKey(
+        RetailPriceSnapshot,
+        on_delete=models.PROTECT,
+        related_name="reference_prices",
+    )
+    period = models.CharField(max_length=8, choices=Period.choices)
+    value_status = models.CharField(max_length=16, choices=ValueStatus.choices)
+    value = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("1"))],
+    )
+    unavailable_reason = models.CharField(  # noqa: DJ001 - NULL means no missing-value reason.
+        max_length=32,
+        choices=UnavailableReason.choices,
+        null=True,
+        blank=True,
+    )
+    reference_date_status = models.CharField(
+        max_length=40,
+        choices=ReferenceDateStatus.choices,
+        default=ReferenceDateStatus.SOURCE_REFERENCE_DATE_UNAVAILABLE,
+    )
+    source_reference_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("snapshot", "period"),
+                name="grocery_reference_snapshot_period_uniq",
+            ),
+            models.CheckConstraint(
+                condition=Q(period__in=("WEEK", "MONTH", "YEAR")),
+                name="grocery_reference_period_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        value_status="AVAILABLE",
+                        value__isnull=False,
+                        unavailable_reason__isnull=True,
+                    )
+                    & Q(value__gt=0)
+                    | Q(
+                        value_status="UNAVAILABLE",
+                        value__isnull=True,
+                        unavailable_reason__isnull=False,
+                        unavailable_reason="SOURCE_VALUE_MISSING",
+                    )
+                ),
+                name="grocery_reference_value_state_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(
+                    reference_date_status="SOURCE_REFERENCE_DATE_UNAVAILABLE",
+                    source_reference_date__isnull=True,
+                ),
+                name="grocery_reference_date_state_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.snapshot_id}:{self.period}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ValidationError("Reference prices are immutable.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        raise ValidationError("Reference prices are immutable.")
+
+    def clean(self) -> None:
+        super().clean()
+        if self.value_status == self.ValueStatus.AVAILABLE:
+            if self.value is None or self.unavailable_reason is not None:
+                raise ValidationError(
+                    "Available reference prices require a value and forbid an unavailable reason."
+                )
+        elif self.value_status == self.ValueStatus.UNAVAILABLE:
+            if (
+                self.value is not None
+                or self.unavailable_reason != self.UnavailableReason.SOURCE_VALUE_MISSING
+            ):
+                raise ValidationError(
+                    "Unavailable reference prices require SOURCE_VALUE_MISSING and forbid a value."
+                )
+
+        if (
+            self.reference_date_status != self.ReferenceDateStatus.SOURCE_REFERENCE_DATE_UNAVAILABLE
+            or self.source_reference_date is not None
+        ):
+            raise ValidationError(
+                "The source does not provide reference dates; dates must remain unavailable."
+            )
+
+    @classmethod
+    @transaction.atomic
+    def get_or_validate(
+        cls,
+        *,
+        snapshot_id: uuid.UUID,
+        period: str,
+        value_status: str,
+        value: Decimal | None,
+        unavailable_reason: str | None,
+        reference_date_status: str = ReferenceDateStatus.SOURCE_REFERENCE_DATE_UNAVAILABLE,
+        source_reference_date: date | None = None,
+    ) -> ReferencePrice:
+        snapshot = RetailPriceSnapshot.objects.select_for_update().get(pk=snapshot_id)
+        semantic_fields: dict[str, object] = {
+            "value_status": value_status,
+            "value": value,
+            "unavailable_reason": unavailable_reason,
+            "reference_date_status": reference_date_status,
+            "source_reference_date": source_reference_date,
+        }
+        candidate = cls(snapshot=snapshot, period=period, **semantic_fields)
+        candidate.full_clean(validate_unique=False, validate_constraints=False)
+
+        existing = cls.objects.select_for_update().filter(snapshot=snapshot, period=period).first()
+        if existing is not None:
+            if any(
+                getattr(existing, field_name) != field_value
+                for field_name, field_value in semantic_fields.items()
+            ):
+                raise ValidationError(
+                    "Reference price replay conflicts with the existing snapshot period."
+                )
+            return existing
+
+        candidate.save()
+        return candidate
+
+
+class PriceChangeFact(models.Model):
+    """Immutable, reproducible arithmetic derived from one reference price."""
+
+    CALCULATION_REVISION = "PRICE_COMPARISON_V1"
+
+    class Direction(models.TextChoices):
+        LOWER = "LOWER", "Lower"
+        EQUAL = "EQUAL", "Equal"
+        HIGHER = "HIGHER", "Higher"
+        UNAVAILABLE = "UNAVAILABLE", "Unavailable"
+
+    class RoundingMode(models.TextChoices):
+        ROUND_HALF_UP = "ROUND_HALF_UP", "Round half up"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    reference_price = models.OneToOneField(
+        ReferencePrice,
+        on_delete=models.PROTECT,
+        related_name="change_fact",
+    )
+    direction = models.CharField(max_length=16, choices=Direction.choices)
+    signed_difference = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        null=True,
+        blank=True,
+    )
+    signed_percentage = models.DecimalField(
+        max_digits=16,
+        decimal_places=1,
+        null=True,
+        blank=True,
+    )
+    calculation_revision = models.CharField(
+        max_length=64,
+        default=CALCULATION_REVISION,
+        editable=False,
+    )
+    rounding_mode = models.CharField(
+        max_length=16,
+        choices=RoundingMode.choices,
+        default=RoundingMode.ROUND_HALF_UP,
+        editable=False,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(direction__in=("LOWER", "EQUAL", "HIGHER", "UNAVAILABLE")),
+                name="grocery_change_direction_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        direction="UNAVAILABLE",
+                        signed_difference__isnull=True,
+                        signed_percentage__isnull=True,
+                    )
+                    | (
+                        Q(signed_difference__isnull=False, signed_percentage__isnull=False)
+                        & (
+                            Q(direction="LOWER", signed_difference__lt=0)
+                            | Q(direction="EQUAL", signed_difference=0)
+                            | Q(direction="HIGHER", signed_difference__gt=0)
+                        )
+                    )
+                ),
+                name="grocery_change_value_state_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(calculation_revision="PRICE_COMPARISON_V1"),
+                name="grocery_change_revision_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(rounding_mode="ROUND_HALF_UP"),
+                name="grocery_change_rounding_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.reference_price_id}:{self.calculation_revision}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ValidationError("Price change facts are immutable.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        raise ValidationError("Price change facts are immutable.")
+
+    @classmethod
+    def _expected_fields(cls, reference_price: ReferencePrice) -> dict[str, object]:
+        stored_references = list(
+            ReferencePrice.objects.filter(snapshot_id=reference_price.snapshot_id)
+        )
+        if len(stored_references) != len(DomainComparisonPeriod) or {
+            stored.period for stored in stored_references
+        } != {period.value for period in DomainComparisonPeriod}:
+            raise ValidationError(
+                "Price change calculation requires exactly one WEEK, MONTH, and YEAR reference."
+            )
+
+        try:
+            domain_references = tuple(
+                DomainReferencePrice(
+                    period=DomainComparisonPeriod(stored.period),
+                    value_status=DomainValueStatus(stored.value_status),
+                    value=stored.value,
+                    unavailable_reason=stored.unavailable_reason,
+                    reference_date_status=DomainReferenceDateStatus(stored.reference_date_status),
+                    reference_date=stored.source_reference_date,
+                )
+                for stored in stored_references
+            )
+            comparisons = compare_snapshot(
+                DomainPriceSnapshot(
+                    current_value=reference_price.snapshot.current_price,
+                    references=domain_references,
+                )
+            )
+        except PriceValidationError as error:
+            raise ValidationError(
+                "Stored price values violate the calculation contract."
+            ) from error
+
+        comparison = next(
+            item for item in comparisons if item.period.value == reference_price.period
+        )
+        return {
+            "direction": comparison.direction.value,
+            "signed_difference": comparison.difference,
+            "signed_percentage": comparison.percentage,
+            "calculation_revision": cls.CALCULATION_REVISION,
+            "rounding_mode": cls.RoundingMode.ROUND_HALF_UP,
+        }
+
+    def clean(self) -> None:
+        super().clean()
+        if not self.reference_price_id:
+            return
+        expected = type(self)._expected_fields(self.reference_price)
+        if any(getattr(self, field_name) != value for field_name, value in expected.items()):
+            raise ValidationError(
+                "Price change fact does not match the deterministic calculation contract."
+            )
+
+    @classmethod
+    @transaction.atomic
+    def get_or_validate(cls, *, reference_price_id: uuid.UUID) -> PriceChangeFact:
+        reference_price = (
+            ReferencePrice.objects.select_for_update()
+            .select_related("snapshot")
+            .get(pk=reference_price_id)
+        )
+        list(
+            ReferencePrice.objects.select_for_update().filter(
+                snapshot_id=reference_price.snapshot_id
+            )
+        )
+        expected = cls._expected_fields(reference_price)
+        candidate = cls(reference_price=reference_price, **expected)
+        candidate.full_clean(validate_unique=False, validate_constraints=False)
+
+        existing = cls.objects.select_for_update().filter(reference_price=reference_price).first()
+        if existing is not None:
+            if any(
+                getattr(existing, field_name) != field_value
+                for field_name, field_value in expected.items()
+            ):
+                raise ValidationError(
+                    "Price change replay conflicts with the stored deterministic fact."
+                )
+            return existing
+
+        candidate.save()
+        return candidate
+
+
+@transaction.atomic
+def persist_reference_price_facts(
+    *,
+    snapshot_id: uuid.UUID,
+    reference_values: Mapping[str, Decimal | None],
+) -> tuple[PriceChangeFact, ...]:
+    """Persist exactly three provider references and their deterministic comparisons."""
+
+    periods = tuple(period.value for period in DomainComparisonPeriod)
+    if set(reference_values) != set(periods) or len(reference_values) != len(periods):
+        raise ValidationError("Reference input requires exactly WEEK, MONTH, and YEAR.")
+
+    RetailPriceSnapshot.objects.select_for_update().get(pk=snapshot_id)
+    references = tuple(
+        ReferencePrice.get_or_validate(
+            snapshot_id=snapshot_id,
+            period=period,
+            value_status=(
+                ReferencePrice.ValueStatus.UNAVAILABLE
+                if reference_values[period] is None
+                else ReferencePrice.ValueStatus.AVAILABLE
+            ),
+            value=reference_values[period],
+            unavailable_reason=(
+                ReferencePrice.UnavailableReason.SOURCE_VALUE_MISSING
+                if reference_values[period] is None
+                else None
+            ),
+        )
+        for period in periods
+    )
+    return tuple(
+        PriceChangeFact.get_or_validate(reference_price_id=reference.id) for reference in references
+    )
 
 
 def ordered_page_manifest_sha256(receipts: Sequence[PageReceipt]) -> str:

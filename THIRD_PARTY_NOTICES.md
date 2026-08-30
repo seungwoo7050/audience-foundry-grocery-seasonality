@@ -32,6 +32,9 @@ digest를 함께 고정한다. 이 고지는 각 upstream license 원문을 대�
 | pytest-cov | `7.1.0` | coverage integration | MIT |
 | pytest-django | `4.14.0` | Django test integration | BSD-3-Clause |
 | Ruff | `0.16.5` | formatter·linter | MIT |
+| @playwright/cli | `0.1.18` | 실제 Chromium browser E2E·screenshot 검증 | Apache-2.0 |
+| Chromium | `152.0.7977.8` | Playwright가 관리하는 browser 검증 runtime | BSD-style 및 bundled component 고지 |
+| @axe-core/cli | `4.13.0` | 렌더링된 page의 WCAG A·AA 자동 검사 | MPL-2.0 및 bundled third-party 고지 |
 
 PostgreSQL image index digest는
 `sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280`다.
@@ -41,3 +44,6 @@ PostgreSQL image index digest는
 
 프로젝트는 이 package source를 vendoring하거나 수정하지 않는다. vulnerability scan은
 license·provenance 검토를 대체하지 않으며, release gate에서 lock 전체를 다시 검사한다.
+Playwright·Chromium·axe-core는 `uv.lock`이나 production artifact에 포함하지 않는 별도
+assurance 도구다. browser evidence를 재생성하는 환경은 각 배포물의 upstream license와
+bundled notice를 함께 보존한다.

@@ -13,6 +13,7 @@ from django.db import DatabaseError
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
+from django.views.decorators.http import require_safe
 
 from grocery.forms import QUERY_MAX_LENGTH, SearchForm
 from grocery.observability import log_event
@@ -26,24 +27,27 @@ from grocery.public_read import (
 _LOGGER: Final = logging.getLogger("grocery.audit")
 _QA_STATES: Final = frozenset({"loading", "empty", "unavailable", "stale", "server_error"})
 _QA_DETAIL_STATES: Final = frozenset({"loading", "unavailable", "stale", "server_error"})
+_QUERY_ERROR_MESSAGES: Final = {
+    "max_length": f"검색어는 {QUERY_MAX_LENGTH}자 이하여야 합니다.",
+    "unsafe": "검색어에는 줄바꿈이나 제어 문자를 사용할 수 없습니다.",
+}
 
 
+@require_safe
 def catalog(request: HttpRequest) -> HttpResponse:
     form = SearchForm(request.GET if request.GET else None)
     query = ""
     category = ""
-    query_error = ""
     if form.is_bound and not form.is_valid():
-        raw_query = request.GET.get("q", "")
-        query = raw_query[: QUERY_MAX_LENGTH + 1]
-        query_error = str(next(iter(form.errors.values()))[0])
-        context = _catalog_base_context(query=query, category="")
+        query_error = _query_error(form)
+        category_error = "부류 선택을 확인해 주세요." if "category" in form.errors else ""
+        context = _catalog_base_context(category="")
         context.update(
             {
-                "catalog_state": "empty",
+                "catalog_state": "validation",
                 "query_error": query_error,
+                "category_error": category_error,
                 "results": [],
-                "status_message": "입력을 확인하고 다시 검색해 주세요.",
             }
         )
         return render(request, "grocery/catalog.html", context, status=400)
@@ -53,7 +57,7 @@ def catalog(request: HttpRequest) -> HttpResponse:
 
     try:
         active = load_active_publication()
-        context = _catalog_base_context(query=query, category=category)
+        context = _catalog_base_context(category=category)
         if active is None:
             context.update(
                 {
@@ -89,7 +93,7 @@ def catalog(request: HttpRequest) -> HttpResponse:
         return _publication_response(response, active.revision.typed_fact_set_sha256)
     except DatabaseError, ValidationError:
         log_event(_LOGGER, "ERROR", "public.catalog.unavailable")
-        context = _catalog_base_context(query=query, category=category)
+        context = _catalog_base_context(category=category)
         context.update(
             {
                 "catalog_state": "server_error",
@@ -101,6 +105,7 @@ def catalog(request: HttpRequest) -> HttpResponse:
         return render(request, "grocery/catalog.html", context, status=503)
 
 
+@require_safe
 def detail(request: HttpRequest, series_id: uuid.UUID) -> HttpResponse:
     try:
         active = load_active_publication()
@@ -139,10 +144,11 @@ def detail(request: HttpRequest, series_id: uuid.UUID) -> HttpResponse:
         return render(request, "grocery/detail.html", context, status=503)
 
 
+@require_safe
 def qa_catalog_state(request: HttpRequest, state: str) -> HttpResponse:
     if not settings.QA_STATE_PREVIEWS_ENABLED or state not in _QA_STATES:
         raise Http404
-    context = _catalog_base_context(query="아주긴한국어공식품목명", category="vegetable")
+    context = _catalog_base_context(category="vegetable")
     context.update(
         {
             "qa_preview": True,
@@ -158,6 +164,7 @@ def qa_catalog_state(request: HttpRequest, state: str) -> HttpResponse:
     )
 
 
+@require_safe
 def qa_detail_state(request: HttpRequest, state: str) -> HttpResponse:
     if not settings.QA_STATE_PREVIEWS_ENABLED or state not in _QA_DETAIL_STATES:
         raise Http404
@@ -183,17 +190,16 @@ def qa_detail_state(request: HttpRequest, state: str) -> HttpResponse:
     )
 
 
-def _catalog_base_context(*, query: str, category: str) -> dict[str, object]:
+def _catalog_base_context(*, category: str) -> dict[str, object]:
     catalog_url = reverse("grocery:catalog")
     return {
         "home_url": catalog_url,
         "form_action": catalog_url,
-        "query": query,
         "selected_category": category,
         "categories": [
             {
                 "label": label,
-                "url": _category_url(catalog_url, query=query, category=value),
+                "url": _category_url(catalog_url, category=value),
                 "selected": category == value,
             }
             for value, label in (("", "전체"), ("vegetable", "채소류"), ("fruit", "과일류"))
@@ -201,10 +207,8 @@ def _catalog_base_context(*, query: str, category: str) -> dict[str, object]:
     }
 
 
-def _category_url(base_url: str, *, query: str, category: str) -> str:
+def _category_url(base_url: str, *, category: str) -> str:
     parameters = {}
-    if query:
-        parameters["q"] = query
     if category:
         parameters["category"] = category
     return f"{base_url}?{urlencode(parameters)}" if parameters else base_url
@@ -212,8 +216,14 @@ def _category_url(base_url: str, *, query: str, category: str) -> str:
 
 def _publication_response(response: HttpResponse, fact_set_sha256: str) -> HttpResponse:
     response.headers["X-Publication-Fact-Set"] = fact_set_sha256
-    response.headers["Cache-Control"] = "public, max-age=60, stale-if-error=3600"
     return response
+
+
+def _query_error(form: SearchForm) -> str:
+    errors = form.errors.as_data().get("q", [])
+    if not errors:
+        return ""
+    return _QUERY_ERROR_MESSAGES.get(errors[0].code or "", "검색어를 확인해 주세요.")
 
 
 def _qa_results() -> list[dict[str, str]]:

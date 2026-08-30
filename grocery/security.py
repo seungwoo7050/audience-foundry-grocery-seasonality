@@ -24,6 +24,7 @@ CONTENT_SECURITY_POLICY: Final = (
 )
 
 SECURITY_HEADERS: Final[dict[str, str]] = {
+    "Cache-Control": "no-store",
     "Content-Security-Policy": CONTENT_SECURITY_POLICY,
     "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=()",
     "Cross-Origin-Opener-Policy": "same-origin",

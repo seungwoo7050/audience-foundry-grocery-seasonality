@@ -56,6 +56,7 @@ def test_privileged_browser_capabilities_and_cross_origin_access_are_denied() ->
     assert response.headers["Cross-Origin-Resource-Policy"] == "same-origin"
     assert response.headers["X-Frame-Options"] == "DENY"
     assert response.headers["X-Content-Type-Options"] == "nosniff"
+    assert response.headers["Cache-Control"] == "no-store"
 
 
 @pytest.mark.parametrize("path", ["/admin", "/admin/", "/admin/auth/user/"])

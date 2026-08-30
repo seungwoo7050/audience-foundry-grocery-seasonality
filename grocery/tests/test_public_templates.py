@@ -142,9 +142,14 @@ def test_catalog_renders_semantic_search_and_long_identity() -> None:
 
 
 def test_catalog_validation_error_is_associated_with_input() -> None:
+    private_query = "잘못된 입력"
     html = render(
         "grocery/catalog.html",
-        catalog_context(query="잘못된 입력", query_error="검색어는 80자 이하여야 합니다."),
+        catalog_context(
+            catalog_state="validation",
+            query=private_query,
+            query_error="검색어는 80자 이하여야 합니다.",
+        ),
     )
 
     assert 'id="search-error"' in html
@@ -153,6 +158,8 @@ def test_catalog_validation_error_is_associated_with_input() -> None:
     assert 'aria-describedby="catalog-query-hint search-error"' in html
     assert 'href="#catalog-query">검색어 입력으로 이동</a>' in html
     assert "검색어는 80자 이하여야 합니다." in html
+    assert private_query not in html
+    assert "조건에 맞는 항목 없음" not in html
 
 
 @pytest.mark.parametrize(

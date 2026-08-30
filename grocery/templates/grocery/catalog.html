@@ -14,12 +14,19 @@
 
   <section class="search-panel" aria-labelledby="catalog-search-heading">
     <h2 id="catalog-search-heading">품목 찾기</h2>
-    {% if query_error %}
+    {% if query_error or category_error %}
       <div id="search-error" class="form-error" role="alert">
         <span aria-hidden="true">!</span>
         <div class="form-error__content">
-          <p><strong>입력 확인:</strong> {{ query_error }}</p>
-          <a class="form-error__link" href="#catalog-query">검색어 입력으로 이동</a>
+          <p><strong>입력 확인:</strong> 입력 내용을 고친 뒤 다시 검색해 주세요.</p>
+          <ul>
+            {% if query_error %}
+              <li>{{ query_error }} <a class="form-error__link" href="#catalog-query">검색어 입력으로 이동</a></li>
+            {% endif %}
+            {% if category_error %}
+              <li>{{ category_error }} <a class="form-error__link" href="{{ form_action }}">부류 선택 초기화</a></li>
+            {% endif %}
+          </ul>
         </div>
       </div>
     {% endif %}
@@ -31,7 +38,6 @@
           id="catalog-query"
           name="q"
           type="search"
-          value="{{ query|default:'' }}"
           maxlength="80"
           autocomplete="off"
           enterkeyhint="search"
@@ -65,7 +71,8 @@
     {% endif %}
   </section>
 
-  {% if catalog_state == "loading" or catalog_state == "unavailable" or catalog_state == "server_error" %}
+  {% if catalog_state == "validation" %}
+  {% elif catalog_state == "loading" or catalog_state == "unavailable" or catalog_state == "server_error" %}
     {% include "grocery/_state_notice.html" with state=catalog_state state_message=status_message retry_url=retry_url %}
   {% else %}
     {% if catalog_state == "stale" %}

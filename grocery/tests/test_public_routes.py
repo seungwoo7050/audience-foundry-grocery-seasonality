@@ -119,8 +119,44 @@ def test_invalid_mobile_search_input_returns_associated_correction_error() -> No
     assert 'aria-invalid="true"' in invalid_html
     assert 'aria-describedby="catalog-query-hint search-error"' in invalid_html
     assert "검색어는 80자 이하여야 합니다." in invalid_html
+    assert invalid_query not in invalid_html
+    assert "조건에 맞는 항목 없음" not in invalid_html
     assert corrected_response.status_code == 200
     assert 'aria-invalid="true"' not in corrected_response.content.decode()
+
+
+@pytest.mark.django_db
+def test_category_validation_is_distinct_and_never_reflects_query_or_choice() -> None:
+    activate_publication()
+    query_marker = "응답에나오면안되는검색표시"
+    category_marker = "응답에나오면안되는부류표시"
+
+    response = Client().get(
+        reverse("grocery:catalog"),
+        {"q": query_marker, "category": category_marker},
+    )
+    html = response.content.decode()
+
+    assert response.status_code == 400
+    assert "부류 선택을 확인해 주세요." in html
+    assert "부류 선택 초기화" in html
+    assert 'aria-invalid="true"' not in html
+    assert query_marker not in html
+    assert category_marker not in html
+    assert "조건에 맞는 항목 없음" not in html
+
+
+@pytest.mark.django_db
+def test_valid_unmatched_query_is_not_echoed_or_propagated_to_category_urls() -> None:
+    activate_publication()
+    marker = "응답에나오면안되는정상검색표시"
+
+    response = Client().get(reverse("grocery:catalog"), {"q": marker})
+    html = response.content.decode()
+
+    assert response.status_code == 200
+    assert marker not in html
+    assert "q=" not in html
 
 
 @pytest.mark.django_db
@@ -218,3 +254,37 @@ def test_unrelated_unpublished_series_does_not_change_catalog_results() -> None:
 
     assert before == after
     assert "공개되지않은긴후보이름" not in after.decode()
+
+
+@pytest.mark.django_db
+def test_public_html_is_no_store_for_success_validation_not_found_and_failure() -> None:
+    _, snapshot, _ = activate_publication()
+    client = Client()
+    responses = [
+        client.get(reverse("grocery:catalog")),
+        client.get(reverse("grocery:catalog"), {"q": "가" * 81}),
+        client.get(reverse("grocery:detail", kwargs={"series_id": uuid.uuid4()})),
+        client.get(reverse("grocery:detail", kwargs={"series_id": snapshot.series_id})),
+    ]
+    with patch("grocery.views.load_active_publication", side_effect=DatabaseError("hidden")):
+        responses.append(client.get(reverse("grocery:catalog")))
+
+    assert [response.status_code for response in responses] == [200, 400, 404, 200, 503]
+    assert all(response.headers["Cache-Control"] == "no-store" for response in responses)
+
+
+@pytest.mark.django_db
+def test_public_views_reject_unsafe_methods_before_reading_publication() -> None:
+    client = Client()
+    paths = (
+        reverse("grocery:catalog"),
+        reverse("grocery:detail", kwargs={"series_id": uuid.uuid4()}),
+    )
+
+    with patch("grocery.views.load_active_publication") as publication_read:
+        for path in paths:
+            for method in (client.post, client.put, client.patch, client.delete):
+                response = method(path)
+                assert response.status_code == 405
+
+    publication_read.assert_not_called()

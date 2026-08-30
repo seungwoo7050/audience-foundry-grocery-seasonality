@@ -1,7 +1,8 @@
-"""Persist one successful KAMIS acquisition without retaining its raw payload."""
+"""Persist KAMIS acquisition evidence without retaining its raw payload."""
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 
@@ -18,6 +19,7 @@ from grocery.models import (
     ordered_page_manifest_sha256,
 )
 from grocery.source.client import REDACTED_REQUEST_SHAPE, KamisFetchResult, KamisTransportError
+from grocery.source.client import PageReceipt as ClientPageReceipt
 
 
 @dataclass(frozen=True, slots=True)
@@ -88,6 +90,7 @@ _KNOWN_TRANSPORT_CODES = (
         }
     )
 )
+_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 
 
 @transaction.atomic
@@ -157,9 +160,18 @@ def fail_kamis_fetch(
 ) -> FetchAttempt:
     """Finalize a failed attempt using only the transport's redacted error fields."""
 
-    attempt = FetchAttempt.objects.select_for_update().get(pk=attempt_id)
+    attempt = (
+        FetchAttempt.objects.select_for_update()
+        .select_related("source_configuration")
+        .get(pk=attempt_id)
+    )
     if attempt.state != FetchAttempt.State.STARTED:
         raise ValidationError("Only a started fetch attempt can be failed.")
+    if attempt.page_receipts.exists():
+        raise ValidationError("A started fetch attempt already has page receipts.")
+
+    receipts = _partial_receipt_candidates(attempt, error)
+    PageReceipt.objects.bulk_create(receipts)
 
     state, failure_class = _classify_transport_failure(error)
     attempt.state = state
@@ -170,6 +182,9 @@ def fail_kamis_fetch(
         if error.code in _KNOWN_TRANSPORT_CODES
         else "UNCLASSIFIED_TRANSPORT_ERROR"
     )
+    attempt.received_page_count = len(receipts)
+    attempt.received_row_count = sum(receipt.received_row_count for receipt in receipts)
+    attempt.received_byte_count = sum(receipt.body_byte_length for receipt in receipts)
     attempt.save()
     return attempt
 
@@ -262,6 +277,108 @@ def _receipt_candidates(
             )
         )
     return candidates
+
+
+def _partial_receipt_candidates(
+    attempt: FetchAttempt,
+    error: KamisTransportError,
+) -> list[PageReceipt]:
+    receipts = error.partial_page_receipts
+    if not isinstance(receipts, tuple) or any(
+        not isinstance(receipt, ClientPageReceipt) for receipt in receipts
+    ):
+        raise ValidationError("Partial receipt evidence has an invalid container.")
+    source = attempt.source_configuration
+    if error.page_number is not None and error.page_number > source.max_pages_per_attempt:
+        raise ValidationError("The failed page exceeds the configured page budget.")
+    if error.attempt is not None and error.attempt > source.max_retries + 1:
+        raise ValidationError("The failed page exceeds the configured retry budget.")
+    if error.attempt is not None and error.attempt > source.max_requests_per_attempt:
+        raise ValidationError("The failed page exceeds the configured request budget.")
+    if not receipts:
+        return []
+
+    expected = list(range(1, len(receipts) + 1))
+    if len(receipts) > source.max_pages_per_attempt:
+        raise ValidationError("Partial receipts exceed the configured page budget.")
+    if len(receipts) > source.max_requests_per_attempt:
+        raise ValidationError("Partial receipts exceed the configured request budget.")
+    if [receipt.ordinal for receipt in receipts] != expected:
+        raise ValidationError("Partial receipt ordinals must be contiguous from one.")
+    if [receipt.requested_page_number for receipt in receipts] != expected:
+        raise ValidationError("Partial receipt page numbers must be contiguous from one.")
+    if error.page_number != len(receipts) + 1:
+        raise ValidationError("Partial receipts do not precede the failed page.")
+    minimum_request_count = len(receipts) + (error.attempt or 1)
+    if minimum_request_count > source.max_requests_per_attempt:
+        raise ValidationError("Partial evidence exceeds the configured request budget.")
+
+    if any(not _has_safe_partial_shape(receipt) for receipt in receipts):
+        raise ValidationError("Partial receipt evidence has an invalid safe shape.")
+    declared_totals = {receipt.declared_total_count for receipt in receipts}
+    declared_sizes = {receipt.declared_page_size for receipt in receipts}
+    if len(declared_totals) != 1 or len(declared_sizes) != 1:
+        raise ValidationError("Partial receipt source pagination changed between pages.")
+
+    declared_total = next(iter(declared_totals))
+    declared_page_size = next(iter(declared_sizes))
+    required_pages = max(1, (declared_total + declared_page_size - 1) // declared_page_size)
+    if required_pages > source.max_pages_per_attempt:
+        raise ValidationError("Partial receipts declare a total beyond the source page budget.")
+    if required_pages > source.max_requests_per_attempt:
+        raise ValidationError("Partial receipts declare a total beyond the source request budget.")
+    if sum(receipt.row_count for receipt in receipts) >= declared_total:
+        raise ValidationError("Partial receipt rows must be an incomplete prefix.")
+    if any(receipt.byte_length > source.max_page_bytes for receipt in receipts):
+        raise ValidationError("A partial receipt exceeds the configured byte budget.")
+
+    return [_page_receipt_candidate(attempt, receipt) for receipt in receipts]
+
+
+def _has_safe_partial_shape(receipt: ClientPageReceipt) -> bool:
+    integer_values = (
+        receipt.ordinal,
+        receipt.requested_page_number,
+        receipt.declared_page_number,
+        receipt.declared_page_size,
+        receipt.declared_total_count,
+        receipt.row_count,
+        receipt.http_status,
+        receipt.byte_length,
+    )
+    return (
+        all(isinstance(value, int) and not isinstance(value, bool) for value in integer_values)
+        and receipt.ordinal > 0
+        and receipt.requested_page_number == receipt.declared_page_number
+        and receipt.declared_page_size > 0
+        and receipt.declared_total_count > 0
+        and receipt.row_count == receipt.declared_page_size
+        and receipt.http_status == 200
+        and receipt.provider_result_code == "0"
+        and receipt.byte_length > 0
+        and isinstance(receipt.body_sha256, str)
+        and _SHA256.fullmatch(receipt.body_sha256) is not None
+    )
+
+
+def _page_receipt_candidate(
+    attempt: FetchAttempt,
+    receipt: ClientPageReceipt,
+) -> PageReceipt:
+    return PageReceipt(
+        fetch_attempt=attempt,
+        request_ordinal=receipt.ordinal,
+        page_number=receipt.requested_page_number,
+        http_status=receipt.http_status,
+        provider_result_code=receipt.provider_result_code,
+        declared_total_count=receipt.declared_total_count,
+        received_row_count=receipt.row_count,
+        body_state=PageReceipt.BodyState.RECEIVED,
+        body_byte_length=receipt.byte_length,
+        body_sha256=receipt.body_sha256,
+        media_type=PageReceipt.MediaType.JSON,
+        encoding=PageReceipt.Encoding.UTF_8,
+    )
 
 
 def _validate_completed_replay(

@@ -22,6 +22,7 @@ from grocery.source.client import (
     JsonValue,
     KamisHttpClient,
     KamisTransportError,
+    PageReceipt,
 )
 
 
@@ -423,10 +424,74 @@ def test_declared_total_change_is_terminal() -> None:
         ]
     )
 
-    with pytest.raises(KamisTransportError, match="declared_total_changed"):
+    with pytest.raises(KamisTransportError, match="declared_total_changed") as raised:
         KamisHttpClient(open_url=opener, sleep=lambda _: None).fetch_recent_prices(
             "synthetic-key", page_size=1
         )
+
+    assert len(raised.value.partial_page_receipts) == 1
+    assert raised.value.partial_page_receipts[0].requested_page_number == 1
+
+
+@pytest.mark.parametrize(
+    ("failed_calls", "error_code", "http_status"),
+    [
+        ([TimeoutError() for _ in range(MAX_ATTEMPTS_PER_PAGE)], "retry_exhausted", None),
+        ([_http_error(429) for _ in range(MAX_ATTEMPTS_PER_PAGE)], "retry_exhausted", 429),
+        ([FakeResponse(b"{")], "invalid_json", None),
+    ],
+)
+def test_later_page_failure_retains_only_completed_page_receipts(
+    failed_calls: list[FakeResponse | Exception],
+    error_code: str,
+    http_status: int | None,
+) -> None:
+    first_body = _page_bytes(
+        page_number=1,
+        page_size=1,
+        total_count=2,
+        items=[_item(1)],
+    )
+    opener = FakeOpener([FakeResponse(first_body), *failed_calls])
+
+    with pytest.raises(KamisTransportError, match=error_code) as raised:
+        KamisHttpClient(open_url=opener, sleep=lambda _: None).fetch_recent_prices(
+            "synthetic-key", page_size=1
+        )
+
+    error = raised.value
+    assert error.page_number == 2
+    assert error.http_status == http_status
+    assert isinstance(error.partial_page_receipts, tuple)
+    assert error.partial_page_receipts == (
+        PageReceipt(
+            ordinal=1,
+            requested_page_number=1,
+            declared_page_number=1,
+            declared_page_size=1,
+            declared_total_count=2,
+            row_count=1,
+            http_status=200,
+            provider_result_code="0",
+            byte_length=len(first_body),
+            body_sha256=error.partial_page_receipts[0].body_sha256,
+        ),
+    )
+    assert not hasattr(error, "rows")
+    visible_error = f"{error!s} {error!r}"
+    assert error.partial_page_receipts[0].body_sha256 not in visible_error
+    assert "synthetic_id" not in visible_error
+
+
+def test_unknown_error_metadata_is_not_reflected_by_exception_text_or_repr() -> None:
+    marker = "KAMIS_API_KEY_synthetic_marker"
+
+    error = KamisTransportError(marker, provider_result_code=marker)
+
+    assert error.code == "unclassified_transport_error"
+    assert error.provider_result_code is None
+    assert marker not in str(error)
+    assert marker not in repr(error)
 
 
 def test_short_page_is_terminal() -> None:

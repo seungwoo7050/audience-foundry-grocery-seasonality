@@ -59,6 +59,23 @@ def make_result(*, second_hash: str = "b" * 64, call_count: int = 2) -> KamisFet
     )
 
 
+def make_partial_receipt(**overrides: object) -> ClientPageReceipt:
+    values: dict[str, object] = {
+        "ordinal": 1,
+        "requested_page_number": 1,
+        "declared_page_number": 1,
+        "declared_page_size": 2,
+        "declared_total_count": 3,
+        "row_count": 2,
+        "http_status": 200,
+        "provider_result_code": "0",
+        "byte_length": 20,
+        "body_sha256": "a" * 64,
+    }
+    values.update(overrides)
+    return ClientPageReceipt(**values)  # type: ignore[arg-type]
+
+
 def test_start_records_only_a_redacted_shape_for_an_active_recent_source() -> None:
     source = create_source_configuration()
     run_id = uuid.uuid4()
@@ -229,12 +246,180 @@ def test_failure_finalization_cannot_overwrite_a_terminal_attempt() -> None:
         fail_kamis_fetch(attempt.id, KamisTransportError("retry_exhausted"))
 
 
+@pytest.mark.parametrize(
+    ("error", "state", "failure_class"),
+    [
+        (
+            KamisTransportError(
+                "retry_exhausted",
+                page_number=2,
+                attempt=3,
+                partial_page_receipts=(make_partial_receipt(),),
+            ),
+            FetchAttempt.State.RETRYABLE_FAILED,
+            FetchAttempt.FailureClass.NETWORK,
+        ),
+        (
+            KamisTransportError(
+                "retry_exhausted",
+                page_number=2,
+                attempt=3,
+                http_status=429,
+                partial_page_receipts=(make_partial_receipt(),),
+            ),
+            FetchAttempt.State.RETRYABLE_FAILED,
+            FetchAttempt.FailureClass.HTTP_429,
+        ),
+        (
+            KamisTransportError(
+                "invalid_json",
+                page_number=2,
+                partial_page_receipts=(make_partial_receipt(),),
+            ),
+            FetchAttempt.State.TERMINAL_FAILED,
+            FetchAttempt.FailureClass.SCHEMA,
+        ),
+    ],
+)
+def test_failure_persists_only_completed_received_page_evidence(
+    error: KamisTransportError,
+    state: str,
+    failure_class: str,
+) -> None:
+    source = create_source_configuration()
+    attempt = start_kamis_fetch(source.id)
+
+    failed = fail_kamis_fetch(attempt.id, error)
+
+    assert failed.state == state
+    assert failed.failure_class == failure_class
+    assert failed.received_page_count == 1
+    assert failed.received_row_count == 2
+    assert failed.received_byte_count == 20
+    assert failed.artifact_id is None
+    receipt = PageReceipt.objects.get(fetch_attempt=attempt)
+    assert receipt.body_state == PageReceipt.BodyState.RECEIVED
+    assert receipt.body_absence_reason == ""
+    assert receipt.request_ordinal == receipt.page_number == 1
+    assert receipt.received_row_count == 2
+    assert not PageReceipt.objects.filter(
+        fetch_attempt=attempt,
+        body_state=PageReceipt.BodyState.NOT_RECEIVED,
+    ).exists()
+    assert not SourceArtifact.objects.exists()
+
+
+@pytest.mark.parametrize(
+    ("receipt_overrides", "source_overrides"),
+    [
+        ({"ordinal": 2}, {}),
+        ({"requested_page_number": 2, "declared_page_number": 2}, {}),
+        ({"declared_total_count": 2}, {}),
+        ({"body_sha256": "not-a-hash"}, {}),
+        ({"byte_length": 21}, {"max_page_bytes": 20}),
+        ({}, {"max_pages_per_attempt": 1}),
+        ({}, {"max_requests_per_attempt": 1}),
+    ],
+)
+def test_partial_receipt_or_source_budget_drift_rolls_back_atomically(
+    receipt_overrides: dict[str, object],
+    source_overrides: dict[str, object],
+) -> None:
+    source = create_source_configuration(**source_overrides)
+    attempt = start_kamis_fetch(source.id)
+    error = KamisTransportError(
+        "invalid_json",
+        page_number=2,
+        partial_page_receipts=(make_partial_receipt(**receipt_overrides),),
+    )
+
+    with pytest.raises(ValidationError):
+        fail_kamis_fetch(attempt.id, error)
+
+    attempt.refresh_from_db()
+    assert attempt.state == FetchAttempt.State.STARTED
+    assert attempt.received_page_count == 0
+    assert not attempt.page_receipts.exists()
+    assert not SourceArtifact.objects.exists()
+
+
+def test_partial_retry_attempts_are_included_in_the_minimum_request_budget() -> None:
+    source = create_source_configuration(max_requests_per_attempt=3)
+    attempt = start_kamis_fetch(source.id)
+    error = KamisTransportError(
+        "retry_exhausted",
+        page_number=2,
+        attempt=3,
+        partial_page_receipts=(make_partial_receipt(),),
+    )
+
+    with pytest.raises(ValidationError, match="request budget"):
+        fail_kamis_fetch(attempt.id, error)
+
+    attempt.refresh_from_db()
+    assert attempt.state == FetchAttempt.State.STARTED
+    assert not attempt.page_receipts.exists()
+
+
+@pytest.mark.parametrize(
+    ("source_overrides", "page_number", "retry_attempt"),
+    [
+        ({"max_pages_per_attempt": 1}, 2, None),
+        ({"max_retries": 1}, None, 3),
+        ({"max_requests_per_attempt": 2}, None, 3),
+    ],
+)
+def test_failure_coordinates_cannot_exceed_source_budgets(
+    source_overrides: dict[str, object],
+    page_number: int | None,
+    retry_attempt: int | None,
+) -> None:
+    source = create_source_configuration(**source_overrides)
+    attempt = start_kamis_fetch(source.id)
+
+    with pytest.raises(ValidationError):
+        fail_kamis_fetch(
+            attempt.id,
+            KamisTransportError(
+                "retry_exhausted",
+                page_number=page_number,
+                attempt=retry_attempt,
+            ),
+        )
+
+    attempt.refresh_from_db()
+    assert attempt.state == FetchAttempt.State.STARTED
+    assert not attempt.page_receipts.exists()
+
+
+def test_partial_failure_cannot_be_finalized_or_completed_twice() -> None:
+    source = create_source_configuration()
+    attempt = start_kamis_fetch(source.id)
+    error = KamisTransportError(
+        "invalid_json",
+        page_number=2,
+        partial_page_receipts=(make_partial_receipt(),),
+    )
+    fail_kamis_fetch(attempt.id, error)
+
+    with pytest.raises(ValidationError, match="started"):
+        fail_kamis_fetch(attempt.id, error)
+    with pytest.raises(ValidationError, match="started"):
+        complete_kamis_fetch(attempt.id, make_result())
+
+    assert PageReceipt.objects.filter(fetch_attempt=attempt).count() == 1
+    assert not SourceArtifact.objects.exists()
+
+
 def test_unknown_failure_code_is_not_copied_to_a_receipt_or_error_field() -> None:
     source = create_source_configuration()
     attempt = start_kamis_fetch(source.id)
     marker = "KAMIS_API_KEY_synthetic_marker"
 
-    failed = fail_kamis_fetch(attempt.id, KamisTransportError(marker))
+    error = KamisTransportError(marker)
+    failed = fail_kamis_fetch(attempt.id, error)
 
     assert failed.failure_code == "UNCLASSIFIED_TRANSPORT_ERROR"
     assert marker not in failed.failure_code
+    assert marker not in str(error)
+    assert marker not in repr(error)

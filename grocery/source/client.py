@@ -48,6 +48,51 @@ _ITEMS_KEYS = frozenset({"item"})
 _SAFE_PROVIDER_CODE = re.compile(r"-?[0-9]{1,3}\Z")
 _RETRYABLE_PROVIDER_CODES = frozenset({"-1", "-5", "-10", "22", "23"})
 _RETRY_DELAYS_SECONDS = (0.25, 1.0)
+_SAFE_TRANSPORT_ERROR_CODES = frozenset(
+    {
+        "call_budget_exceeded",
+        "declared_page_mismatch",
+        "declared_page_size_mismatch",
+        "declared_total_changed",
+        "invalid_body",
+        "invalid_content_length",
+        "invalid_declared_page",
+        "invalid_declared_page_size",
+        "invalid_declared_total",
+        "invalid_envelope",
+        "invalid_header",
+        "invalid_http_status",
+        "invalid_items_envelope",
+        "invalid_json",
+        "invalid_page_size",
+        "invalid_provider_header",
+        "invalid_response_state",
+        "invalid_retry_state",
+        "item_not_object",
+        "items_not_array",
+        "missing_charset",
+        "missing_content_type",
+        "page_budget_exceeded",
+        "page_row_count_mismatch",
+        "page_too_large",
+        "redirect_not_allowed",
+        "request_parameter_allowlist_violation",
+        "response_body_not_bytes",
+        "retry_exhausted",
+        "row_total_exceeded",
+        "service_key_missing",
+        "terminal_http_status",
+        "terminal_provider_error",
+        "tls_error",
+        "tls_verification_failed",
+        "transport_internal_error",
+        "unexpected_charset",
+        "unexpected_content_type",
+        "unexpected_data_type",
+        "unexpected_envelope_keys",
+    }
+)
+_UNCLASSIFIED_TRANSPORT_ERROR = "unclassified_transport_error"
 
 type JsonValue = None | bool | int | float | str | list[JsonValue] | dict[str, JsonValue]
 type JsonObject = dict[str, JsonValue]
@@ -94,24 +139,67 @@ class KamisTransportError(RuntimeError):
         attempt: int | None = None,
         http_status: int | None = None,
         provider_result_code: str | None = None,
+        partial_page_receipts: tuple[PageReceipt, ...] = (),
     ) -> None:
-        self.code = code
-        self.page_number = page_number
-        self.attempt = attempt
-        self.http_status = http_status
-        self.provider_result_code = provider_result_code
+        if not isinstance(partial_page_receipts, tuple) or any(
+            not isinstance(receipt, PageReceipt) for receipt in partial_page_receipts
+        ):
+            raise TypeError("partial_page_receipts must be a tuple of PageReceipt values")
+        safe_code = (
+            code
+            if isinstance(code, str) and code in _SAFE_TRANSPORT_ERROR_CODES
+            else _UNCLASSIFIED_TRANSPORT_ERROR
+        )
+        safe_page_number = (
+            page_number
+            if (
+                isinstance(page_number, int)
+                and not isinstance(page_number, bool)
+                and page_number > 0
+            )
+            else None
+        )
+        safe_attempt = (
+            attempt
+            if isinstance(attempt, int) and not isinstance(attempt, bool) and attempt > 0
+            else None
+        )
+        safe_http_status = (
+            http_status
+            if isinstance(http_status, int)
+            and not isinstance(http_status, bool)
+            and 100 <= http_status <= 599
+            else None
+        )
+        safe_provider_result_code = (
+            provider_result_code
+            if isinstance(provider_result_code, str)
+            and _SAFE_PROVIDER_CODE.fullmatch(provider_result_code) is not None
+            else None
+        )
+        self.code = safe_code
+        self.page_number = safe_page_number
+        self.attempt = safe_attempt
+        self.http_status = safe_http_status
+        self.provider_result_code = safe_provider_result_code
+        self.partial_page_receipts = partial_page_receipts
         self.request_shape = REDACTED_REQUEST_SHAPE
-        details = [f"code={code}"]
-        if page_number is not None:
-            details.append(f"page={page_number}")
-        if attempt is not None:
-            details.append(f"attempt={attempt}")
-        if http_status is not None:
-            details.append(f"http_status={http_status}")
-        if provider_result_code is not None:
-            details.append(f"provider_result_code={provider_result_code}")
+        details = [f"code={safe_code}"]
+        if safe_page_number is not None:
+            details.append(f"page={safe_page_number}")
+        if safe_attempt is not None:
+            details.append(f"attempt={safe_attempt}")
+        if safe_http_status is not None:
+            details.append(f"http_status={safe_http_status}")
+        if safe_provider_result_code is not None:
+            details.append(f"provider_result_code={safe_provider_result_code}")
         details.append(f"request={REDACTED_REQUEST_SHAPE}")
         super().__init__(" ".join(details))
+
+    def _retain_completed_pages(self, receipts: tuple[PageReceipt, ...]) -> None:
+        """Attach only raw-free evidence collected by this client invocation."""
+
+        self.partial_page_receipts = receipts
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,50 +293,54 @@ class KamisHttpClient:
         expected_total: int | None = None
         page_number = 1
 
-        while True:
-            page = self._fetch_page(
-                normalized_key,
-                page_number=page_number,
-                page_size=page_size,
-                budget=budget,
-            )
-
-            if expected_total is None:
-                expected_total = page.declared_total_count
-                required_pages = max(1, (expected_total + page_size - 1) // page_size)
-                if required_pages > MAX_PAGES:
-                    raise KamisTransportError("page_budget_exceeded", page_number=page_number)
-            elif page.declared_total_count != expected_total:
-                raise KamisTransportError("declared_total_changed", page_number=page_number)
-
-            remaining = expected_total - len(rows)
-            expected_row_count = min(page_size, max(0, remaining))
-            if len(page.items) != expected_row_count:
-                raise KamisTransportError("page_row_count_mismatch", page_number=page_number)
-
-            rows.extend(page.items)
-            receipts.append(
-                PageReceipt(
-                    ordinal=len(receipts) + 1,
-                    requested_page_number=page_number,
-                    declared_page_number=page.declared_page_number,
-                    declared_page_size=page.declared_page_size,
-                    declared_total_count=page.declared_total_count,
-                    row_count=len(page.items),
-                    http_status=200,
-                    provider_result_code=page.provider_result_code,
-                    byte_length=page.byte_length,
-                    body_sha256=page.body_sha256,
+        try:
+            while True:
+                page = self._fetch_page(
+                    normalized_key,
+                    page_number=page_number,
+                    page_size=page_size,
+                    budget=budget,
                 )
-            )
 
-            if len(rows) == expected_total:
-                break
-            if len(rows) > expected_total:
-                raise KamisTransportError("row_total_exceeded", page_number=page_number)
-            page_number += 1
-            if page_number > MAX_PAGES:
-                raise KamisTransportError("page_budget_exceeded", page_number=page_number)
+                if expected_total is None:
+                    expected_total = page.declared_total_count
+                    required_pages = max(1, (expected_total + page_size - 1) // page_size)
+                    if required_pages > MAX_PAGES:
+                        raise KamisTransportError("page_budget_exceeded", page_number=page_number)
+                elif page.declared_total_count != expected_total:
+                    raise KamisTransportError("declared_total_changed", page_number=page_number)
+
+                remaining = expected_total - len(rows)
+                expected_row_count = min(page_size, max(0, remaining))
+                if len(page.items) != expected_row_count:
+                    raise KamisTransportError("page_row_count_mismatch", page_number=page_number)
+
+                rows.extend(page.items)
+                receipts.append(
+                    PageReceipt(
+                        ordinal=len(receipts) + 1,
+                        requested_page_number=page_number,
+                        declared_page_number=page.declared_page_number,
+                        declared_page_size=page.declared_page_size,
+                        declared_total_count=page.declared_total_count,
+                        row_count=len(page.items),
+                        http_status=200,
+                        provider_result_code=page.provider_result_code,
+                        byte_length=page.byte_length,
+                        body_sha256=page.body_sha256,
+                    )
+                )
+
+                if len(rows) == expected_total:
+                    break
+                if len(rows) > expected_total:
+                    raise KamisTransportError("row_total_exceeded", page_number=page_number)
+                page_number += 1
+                if page_number > MAX_PAGES:
+                    raise KamisTransportError("page_budget_exceeded", page_number=page_number)
+        except KamisTransportError as error:
+            error._retain_completed_pages(tuple(receipts))
+            raise
 
         frozen_receipts = tuple(receipts)
         return KamisFetchResult(

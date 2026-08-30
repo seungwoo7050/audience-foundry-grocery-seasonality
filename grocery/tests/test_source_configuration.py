@@ -49,6 +49,11 @@ def test_bootstrap_seals_the_approved_a_path_contract_without_loading_a_secret()
     assert source.provider_quota_period == SourceConfiguration.QuotaPeriod.UNSPECIFIED
     assert source.request_timeout_seconds == 10
     assert source.retry_policy == SourceConfiguration.RetryPolicy.BOUNDED_TRANSIENT_ONLY
+    assert (
+        source.schedule_execution_mode
+        == SourceConfiguration.ScheduleExecutionMode.PLATFORM_SINGLETON
+    )
+    assert source.schedule_interval_hours == 24
     assert source.max_retries == 2
     assert source.max_requests_per_attempt == MAX_CALLS == 12
     assert source.max_pages_per_attempt == MAX_PAGES == 12

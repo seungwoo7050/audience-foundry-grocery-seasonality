@@ -29,6 +29,8 @@ def create_source_configuration(**overrides: Any) -> SourceConfiguration:
         "provider_quota_period": SourceConfiguration.QuotaPeriod.UNSPECIFIED,
         "request_timeout_seconds": 10,
         "retry_policy": SourceConfiguration.RetryPolicy.BOUNDED_TRANSIENT_ONLY,
+        "schedule_execution_mode": (SourceConfiguration.ScheduleExecutionMode.PLATFORM_SINGLETON),
+        "schedule_interval_hours": 24,
         "max_retries": 2,
         "max_requests_per_attempt": 12,
         "max_pages_per_attempt": 10,
@@ -84,6 +86,8 @@ class SourceConfigurationTests(TestCase):
         self.assertEqual(source.endpoint_scheme, "https")
         self.assertEqual(source.endpoint_method, "GET")
         self.assertEqual(source.raw_retention, "HASH_ONLY")
+        self.assertEqual(source.schedule_execution_mode, "PLATFORM_SINGLETON")
+        self.assertEqual(source.schedule_interval_hours, 24)
         field_names = {field.name for field in source._meta.fields}
         self.assertIn("logical_secret_name", field_names)
         self.assertFalse({"secret", "credential", "api_key"} & field_names)
@@ -126,6 +130,18 @@ class SourceConfigurationTests(TestCase):
 
         with self.assertRaises(IntegrityError), transaction.atomic():
             SourceConfiguration.objects.filter(pk=source.pk).update(state="UNLISTED")
+
+    def test_database_rejects_invalid_schedule_when_validation_is_bypassed(self) -> None:
+        source = create_source_configuration()
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            SourceConfiguration.objects.filter(pk=source.pk).update(
+                schedule_execution_mode="INLINE_WEB_REQUEST"
+            )
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            SourceConfiguration.objects.filter(pk=source.pk).update(schedule_interval_hours=0)
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            SourceConfiguration.objects.filter(pk=source.pk).update(schedule_interval_hours=25)
 
 
 class FetchAttemptTests(TestCase):

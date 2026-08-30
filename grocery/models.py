@@ -91,6 +91,9 @@ class SourceConfiguration(models.Model):
     class RetryPolicy(models.TextChoices):
         BOUNDED_TRANSIENT_ONLY = "BOUNDED_TRANSIENT_ONLY", "Bounded transient failures only"
 
+    class ScheduleExecutionMode(models.TextChoices):
+        PLATFORM_SINGLETON = "PLATFORM_SINGLETON", "Platform-owned singleton job"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     source_owner_name = models.CharField(max_length=200)
     dataset_id = models.CharField(max_length=64)
@@ -125,6 +128,12 @@ class SourceConfiguration(models.Model):
     provider_quota_period = models.CharField(max_length=16, choices=QuotaPeriod.choices)
     request_timeout_seconds = models.PositiveSmallIntegerField()
     retry_policy = models.CharField(max_length=32, choices=RetryPolicy.choices)
+    schedule_execution_mode = models.CharField(
+        max_length=32,
+        choices=ScheduleExecutionMode.choices,
+        default=ScheduleExecutionMode.PLATFORM_SINGLETON,
+    )
+    schedule_interval_hours = models.PositiveSmallIntegerField(default=24)
     max_retries = models.PositiveSmallIntegerField(default=0)
     max_requests_per_attempt = models.PositiveSmallIntegerField()
     max_pages_per_attempt = models.PositiveSmallIntegerField()
@@ -212,6 +221,17 @@ class SourceConfiguration(models.Model):
             models.CheckConstraint(
                 condition=Q(retry_policy="BOUNDED_TRANSIENT_ONLY"),
                 name="grocery_source_retry_policy_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(schedule_execution_mode="PLATFORM_SINGLETON"),
+                name="grocery_source_schedule_mode_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(
+                    schedule_interval_hours__gt=0,
+                    schedule_interval_hours__lte=24,
+                ),
+                name="grocery_source_schedule_interval_valid",
             ),
             models.CheckConstraint(
                 condition=Q(max_retries__gte=0),

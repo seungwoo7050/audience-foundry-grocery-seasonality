@@ -65,6 +65,8 @@ _EXPECTED_CONTRACT_FIELDS: Final = MappingProxyType(
         "provider_quota_period": SourceConfiguration.QuotaPeriod.UNSPECIFIED,
         "request_timeout_seconds": int(CONNECT_READ_TIMEOUT_SECONDS),
         "retry_policy": SourceConfiguration.RetryPolicy.BOUNDED_TRANSIENT_ONLY,
+        "schedule_execution_mode": SourceConfiguration.ScheduleExecutionMode.PLATFORM_SINGLETON,
+        "schedule_interval_hours": 24,
         "max_retries": MAX_ATTEMPTS_PER_PAGE - 1,
         "max_requests_per_attempt": MAX_CALLS,
         "max_pages_per_attempt": MAX_PAGES,

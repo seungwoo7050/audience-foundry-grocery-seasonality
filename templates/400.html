@@ -1,0 +1,12 @@
+{% extends "grocery/base.html" %}
+
+{% block title %}요청을 확인해 주세요 | 농산물 조사값 살펴보기{% endblock %}
+
+{% block content %}
+  <section class="error-page" aria-labelledby="error-heading">
+    <p class="eyebrow">요청 오류 · 400</p>
+    <h1 id="error-heading">요청을 확인해 주세요</h1>
+    <p>입력한 주소나 검색 조건을 처리할 수 없습니다. 내용을 고친 뒤 다시 시도해 주세요.</p>
+    <a class="button button--primary" href="{{ home_url|default:'/' }}">목록으로 돌아가기</a>
+  </section>
+{% endblock %}

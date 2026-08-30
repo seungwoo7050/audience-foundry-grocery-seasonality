@@ -1,0 +1,144 @@
+{% extends "grocery/base.html" %}
+
+{% block title %}{{ series.item_name|default:"조사값 상세" }} | 농산물 조사값 살펴보기{% endblock %}
+
+{% block content %}
+  <nav class="breadcrumb" aria-label="현재 위치">
+    <ol>
+      <li><a href="{{ catalog_url|default:'/' }}">채소·과일 조사값</a></li>
+      <li aria-current="page">{{ series.item_name|default:"상세" }}</li>
+    </ol>
+  </nav>
+
+  <header class="page-heading page-heading--detail">
+    <p class="eyebrow">{{ series.category_label|default:"공개 조사 항목" }}</p>
+    <h1>{{ series.item_name|default:"조사값 상세" }}</h1>
+    {% if series.variety_name or series.grade_name or series.unit_label %}
+      <p class="page-heading__summary identity-summary">
+        {% if series.variety_name %}<span>품종 {{ series.variety_name }}</span>{% endif %}
+        {% if series.grade_name %}<span>등급 {{ series.grade_name }}</span>{% endif %}
+        {% if series.unit_label %}<span>판매 단위 {{ series.unit_label }}</span>{% endif %}
+      </p>
+    {% endif %}
+  </header>
+
+  {% if detail_state == "loading" or detail_state == "unavailable" or detail_state == "server_error" %}
+    {% include "grocery/_state_notice.html" with state=detail_state state_message=status_message retry_url=retry_url %}
+  {% else %}
+    {% if detail_state == "stale" %}
+      {% include "grocery/_state_notice.html" with state="stale" state_message=status_message %}
+    {% endif %}
+
+    <section class="current-price" aria-labelledby="current-price-heading">
+      <div>
+        <p class="eyebrow">KAMIS 소매 조사 평균</p>
+        <h2 id="current-price-heading">조사일 평균</h2>
+      </div>
+      <p class="current-price__value">
+        {% if series.current_price_machine %}<data value="{{ series.current_price_machine }}">{% endif %}
+        {{ series.current_price_label }}
+        {% if series.current_price_machine %}</data>{% endif %}
+      </p>
+      <p class="current-price__date">
+        조사일
+        {% if provenance.source_date_iso %}<time datetime="{{ provenance.source_date_iso }}">{% endif %}
+        {{ provenance.source_date_label }}
+        {% if provenance.source_date_iso %}</time>{% endif %}
+      </p>
+    </section>
+
+    <section class="identity-panel" aria-labelledby="identity-heading">
+      <h2 id="identity-heading">비교 대상의 정확한 조건</h2>
+      <dl class="definition-grid">
+        <div><dt>품목</dt><dd>{{ series.item_name }}</dd></div>
+        <div><dt>품종</dt><dd>{{ series.variety_name }}</dd></div>
+        <div><dt>등급</dt><dd>{{ series.grade_name }}</dd></div>
+        <div><dt>판매 단위</dt><dd>{{ series.unit_label }}</dd></div>
+        <div><dt>조사범위</dt><dd>{{ provenance.coverage_label }}</dd></div>
+      </dl>
+    </section>
+
+    <section class="comparison-section" aria-labelledby="comparison-heading">
+      <div class="section-heading section-heading--stacked">
+        <h2 id="comparison-heading">비교 제공값</h2>
+        <p>source가 같은 series에 제공한 값과 현재 조사 평균의 산술 차이입니다.</p>
+      </div>
+      <ul class="comparison-list">
+        {% for comparison in comparisons %}
+          <li class="comparison-card{% if not comparison.available %} comparison-card--unavailable{% endif %}">
+            <h3>{{ comparison.period_label }}</h3>
+            {% if comparison.available %}
+              <p class="comparison-card__reference">
+                제공값 <strong>{{ comparison.reference_value_label }}</strong>
+              </p>
+              <p class="direction direction--{{ comparison.direction_code|lower }}">
+                <span class="direction__symbol" aria-hidden="true">
+                  {% if comparison.direction_code == "LOWER" %}↓{% elif comparison.direction_code == "HIGHER" %}↑{% else %}＝{% endif %}
+                </span>
+                <span>
+                  {{ comparison.difference_label }} {{ comparison.direction_label }}
+                  ({{ comparison.percentage_label }})
+                </span>
+              </p>
+            {% else %}
+              <p class="status-text status-text--unavailable">
+                <span aria-hidden="true">○</span> 비교 정보 없음
+              </p>
+              {% if comparison.unavailable_reason_label %}
+                <p class="comparison-card__reason">{{ comparison.unavailable_reason_label }}</p>
+              {% endif %}
+            {% endif %}
+            <p class="comparison-card__date">
+              {% if comparison.reference_date_available %}
+                비교 기준일
+                {% if comparison.reference_date_iso %}<time datetime="{{ comparison.reference_date_iso }}">{% endif %}
+                {{ comparison.reference_date_label }}
+                {% if comparison.reference_date_iso %}</time>{% endif %}
+              {% else %}
+                source가 비교 기준일을 별도로 제공하지 않음
+              {% endif %}
+            </p>
+          </li>
+        {% empty %}
+          <li class="comparison-card comparison-card--unavailable">
+            <p class="status-text status-text--unavailable"><span aria-hidden="true">○</span> 비교 정보 없음</p>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+
+    <aside class="provenance" aria-labelledby="provenance-heading">
+      <h2 id="provenance-heading">출처와 자료 상태</h2>
+      <dl class="definition-grid definition-grid--provenance">
+        <div>
+          <dt>출처</dt>
+          <dd>
+            {% if provenance.source_url %}
+              <a href="{{ provenance.source_url }}" rel="external noreferrer">{{ provenance.source_name }}</a>
+            {% else %}
+              {{ provenance.source_name }}
+            {% endif %}
+            {% if provenance.dataset_id %}<span class="metadata-detail">데이터셋 {{ provenance.dataset_id }}</span>{% endif %}
+          </dd>
+        </div>
+        <div><dt>조사일</dt><dd>{{ provenance.source_date_label }}</dd></div>
+        <div><dt>조사범위</dt><dd>{{ provenance.coverage_label }}</dd></div>
+        <div><dt>마지막 확인</dt><dd>{{ provenance.checked_at_label }}</dd></div>
+        <div><dt>공개 검토일</dt><dd>{{ provenance.reviewed_at_label }}</dd></div>
+        <div>
+          <dt>자료 상태</dt>
+          <dd>
+            <span class="status-text status-text--{{ provenance.freshness_state|default:'current' }}">
+              <span aria-hidden="true">{% if provenance.freshness_state == "stale" %}!{% else %}✓{% endif %}</span>
+              {{ provenance.freshness_label }}
+            </span>
+          </dd>
+        </div>
+      </dl>
+      <p class="provenance__note">
+        명시된 품목·품종·등급·판매 단위·조사범위가 모두 같은 값만 비교합니다. source가
+        제공하지 않은 비교 기준일은 추정하지 않습니다.
+      </p>
+    </aside>
+  {% endif %}
+{% endblock %}

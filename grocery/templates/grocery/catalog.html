@@ -1,0 +1,121 @@
+{% extends "grocery/base.html" %}
+
+{% block title %}채소·과일 조사값 | 농산물 조사값 살펴보기{% endblock %}
+
+{% block content %}
+  <header class="page-heading">
+    <p class="eyebrow">KAMIS 소매 조사 평균</p>
+    <h1>채소·과일 조사값</h1>
+    <p class="page-heading__summary">
+      공식 품목명으로 찾아보고, 한 품목의 품종·등급·판매 단위가 같은 제공값만 확인할 수
+      있습니다.
+    </p>
+  </header>
+
+  <section class="search-panel" aria-labelledby="catalog-search-heading">
+    <h2 id="catalog-search-heading">품목 찾기</h2>
+    {% if query_error %}
+      <div id="search-error" class="form-error" role="alert">
+        <span aria-hidden="true">!</span>
+        <span><strong>입력 확인:</strong> {{ query_error }}</span>
+      </div>
+    {% endif %}
+    <form class="search-form" action="{{ form_action|default:'' }}" method="get" role="search">
+      <div class="field-group">
+        <label for="catalog-query">공식 품목명</label>
+        <p id="catalog-query-hint" class="field-hint">예: 배추, 사과</p>
+        <input
+          id="catalog-query"
+          name="q"
+          type="search"
+          value="{{ query|default:'' }}"
+          maxlength="80"
+          autocomplete="off"
+          enterkeyhint="search"
+          aria-describedby="catalog-query-hint{% if query_error %} search-error{% endif %}"
+          {% if query_error %}aria-invalid="true"{% endif %}
+        >
+      </div>
+      {% if selected_category %}
+        <input type="hidden" name="category" value="{{ selected_category }}">
+      {% endif %}
+      <button class="button button--primary" type="submit">검색</button>
+    </form>
+
+    {% if categories %}
+      <nav class="category-nav" aria-label="부류 선택">
+        <ul class="chip-list">
+          {% for category in categories %}
+            <li>
+              <a
+                class="chip{% if category.selected %} chip--selected{% endif %}"
+                href="{{ category.url }}"
+                {% if category.selected %}aria-current="page"{% endif %}
+              >{{ category.label }}</a>
+            </li>
+          {% endfor %}
+        </ul>
+      </nav>
+    {% endif %}
+  </section>
+
+  {% if catalog_state == "loading" or catalog_state == "unavailable" or catalog_state == "server_error" %}
+    {% include "grocery/_state_notice.html" with state=catalog_state state_message=status_message retry_url=retry_url %}
+  {% else %}
+    {% if catalog_state == "stale" %}
+      {% include "grocery/_state_notice.html" with state="stale" state_message=status_message %}
+    {% endif %}
+
+    {% if results %}
+      <section class="catalog-results" aria-labelledby="catalog-results-heading">
+        <div class="section-heading">
+          <h2 id="catalog-results-heading">공개 항목</h2>
+          {% if result_count_label %}<p class="result-count" aria-live="polite">{{ result_count_label }}</p>{% endif %}
+        </div>
+        <ul class="result-list">
+          {% for item in results %}
+            <li>
+              <article class="result-card">
+                <a class="result-card__link" href="{{ item.url }}">
+                  <div class="result-card__heading">
+                    <p class="result-card__category">{{ item.category_label }}</p>
+                    <h3>{{ item.item_name }}</h3>
+                    <p class="result-card__identity">
+                      {{ item.variety_name }} · {{ item.grade_name }} · {{ item.unit_label }}
+                    </p>
+                  </div>
+                  <dl class="result-card__facts">
+                    <div>
+                      <dt>조사일 평균</dt>
+                      <dd>{{ item.current_price_label }}</dd>
+                    </div>
+                    <div>
+                      <dt>조사일</dt>
+                      <dd>
+                        {% if item.source_date_iso %}<time datetime="{{ item.source_date_iso }}">{% endif %}
+                        {{ item.source_date_label }}
+                        {% if item.source_date_iso %}</time>{% endif %}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>자료 상태</dt>
+                      <dd>
+                        <span class="status-text status-text--{{ item.freshness_state|default:'current' }}">
+                          <span aria-hidden="true">{% if item.freshness_state == "stale" %}!{% else %}✓{% endif %}</span>
+                          {{ item.freshness_label }}
+                        </span>
+                      </dd>
+                    </div>
+                  </dl>
+                  <span class="result-card__action" aria-hidden="true">자세히 보기 →</span>
+                </a>
+              </article>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% else %}
+      {% include "grocery/_state_notice.html" with state="empty" state_message=status_message %}
+    {% endif %}
+  {% endif %}
+{% endblock %}

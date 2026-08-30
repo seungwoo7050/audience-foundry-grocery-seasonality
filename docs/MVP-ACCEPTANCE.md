@@ -183,7 +183,19 @@ snapshot과 섞지 않는다. 이를 현재 가격이나 실시간 정보로 표
 통과해도 첫 public 명칭은 `월별 과거 가격 패턴`이다. 계절성 추정, 구매 추천과 forecast는
 새 근거와 새 제품 결정 없이는 범위 밖이다.
 
-## 생산 준비 인수 기준
+## Phase 0 배포 직전 production candidate 인수 기준
+
+이 gate는 실제 배포 전 local candidate의 완료 조건이다. 통과는 `Phase 0 배포 직전 완료`를
+뜻하며 production platform·database·credential·domain이 정해졌거나 실제 배포가 끝났다는
+뜻이 아니다. 네이티브 모바일 앱, 앱스토어 배포와 별도 SPA는 범위 밖이다.
+
+- [ ] 문서가 허용한 source path로 실제 generation 하나가 수집·검수·publication되어 핵심
+  사용자 폐쇄 루프가 last-known-good revision만 읽는다.
+- [ ] Django server-rendered responsive web 하나가 desktop과 mobile을 함께 지원한다.
+- [ ] 실제 배포에서 사용할 migration, release SHA, deploy·application rollback·publication
+  rollback 명령이 runbook과 clean Git 상태로 재현된다.
+- [ ] 실제 배포에 필요한 platform, PostgreSQL, secret injection, domain·DNS와 운영자 계정은
+  사람 전용 잔여 작업으로 분리되어 있다.
 
 - [ ] 깨끗한 잠금 설치에서 Python `3.14.7`, Django `5.2.17`, PostgreSQL `18.6`, uv
   `0.12.6`이 실제 실행 버전으로 확인된다.
@@ -193,16 +205,32 @@ snapshot과 섞지 않는다. 이를 현재 가격이나 실시간 정보로 표
   통과한다.
 - [ ] 운영은 HTTPS, `DEBUG=False`, 정확한 host·CSRF 설정, HSTS와 secure cookie를 사용한다.
 - [ ] Admin은 운영자별 최소 권한, MFA 또는 동등한 강한 인증과 로그인 제한을 사용한다.
-- [ ] secret injection·rotation, structured log, liveness·readiness와 source freshness alert가
-  실제 환경에서 동작한다.
+- [ ] local production-like 설정에서 env secret injection contract·rotation 절차, structured
+  log, liveness·readiness와 source freshness alert 판단이 동작한다. 실제 production secret
+  주입은 배포 checkpoint에 남긴다.
 - [ ] 연속 fetch 실패, quarantine 증가, 대사 불일치, publication·backup 실패가 운영자에게
   경보된다.
-- [ ] 매일 암호화 backup과 point-in-time recovery가 작동하고 빈 환경 복원으로 `RPO 24시간`,
-  `RTO 4시간`, 승인 revision과 audit chain을 검증한다.
+- [ ] disposable PostgreSQL의 실제 `pg_dump`/`pg_restore`가 빈 환경에서 승인 revision,
+  audit chain, row count·hash·current pointer를 복원한다. production의 매일 암호화 backup,
+  point-in-time recovery, `RPO 24시간`·`RTO 4시간`은 platform 선택 뒤 별도 확인한다.
 - [ ] 이전 application과 이전 승인 publication으로 각각 rollback하는 훈련이 성공한다.
 - [ ] secret, dependency vulnerability와 license 검사에 해결되지 않은 차단 항목이 없다.
 
-## 성능과 접근성 인수 기준
+## responsive browser·성능·접근성 인수 기준
+
+실제 browser와 end-to-end test로 `360x800`, `390x844`, `768x1024`, `1440x900`을 각각
+검수하고 viewport별 screenshot을 completion evidence에 연결한다.
+
+- [ ] 어느 viewport에도 document 가로 scroll이 없다.
+- [ ] typography와 heading·metadata 계층이 읽기 쉽고 interactive touch target이 충분하다.
+- [ ] mobile에서 검색 form 입력·제출·validation error 확인·수정이 실제 동작한다.
+- [ ] 긴 한국어 품목·품종·등급·단위·출처·freshness가 잘리거나 겹치지 않는다.
+- [ ] loading, empty, unavailable, stale, validation과 server error 상태가 결정적으로
+  재현되고 screenshot·test로 검증된다.
+- [ ] keyboard-only navigation 순서와 visible focus가 동작한다.
+- [ ] semantic landmark·heading·form label·error association과 screen reader accessible name이
+  자동 검사 및 browser 검수에서 유효하다.
+- [ ] success·warning·error·direction을 색상만으로 전달하지 않는다.
 
 승인된 catalog 크기로 운영과 같은 환경에서 15분 동안 평균 10 requests/s, 동시 사용자 20명,
 목록·검색 70%와 상세 30%의 read-only 부하를 건다. 응답 p95는 500 ms 이하, `5xx`는 0.5%
@@ -210,8 +238,7 @@ snapshot과 섞지 않는다. 이를 현재 가격이나 실시간 정보로 표
 때만 별도 cache를 검토한다.
 
 핵심 page와 form은 keyboard만으로 사용할 수 있고 visible focus, 한국어 label, 오류 요약,
-logical heading, 충분한 contrast와 screen reader로 읽히는 방향 문구를 제공해야 한다. 색만으로
-상태를 전달하지 않는다.
+logical heading, 충분한 contrast와 screen reader로 읽히는 방향 문구를 제공해야 한다.
 
 ## 사람 승인과 완료 증거
 
@@ -225,5 +252,10 @@ rollback을 각각 승인한다. 구현 이후 만드는 `docs/COMPLETION-REPORT
 - 보안·license 검사, 접근성·성능 결과, backup restore와 rollback 결과
 - 현재 승인 `PublicationRevision`, 최근 `PublicationActivation`, 알려진 비목표와 다음
   review 날짜
+- 네 viewport의 실제 browser screenshot·E2E 결과와 발견·수정한 UI/UX 결함
+- exact release SHA, clean status·`git fsck`, deploy·rollback 명령과 production
+  platform·database·secret·domain의 사람 전용 잔여 작업
 
-모든 필수 항목과 사람 승인이 실제 증거에 연결될 때만 MVP 완료로 판정한다.
+local candidate의 모든 필수 항목이 실제 증거에 연결되면 `Phase 0 배포 직전 완료`로 판정한다.
+실제 배포와 production 전용 항목은 해당 사람 checkpoint 이후에만 Phase 0 완료 여부를 별도로
+판정한다.

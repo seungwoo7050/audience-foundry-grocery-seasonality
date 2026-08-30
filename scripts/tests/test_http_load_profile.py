@@ -3,8 +3,13 @@ from __future__ import annotations
 import io
 import json
 import threading
+import time
 import uuid
+from collections.abc import Callable
+from concurrent.futures import Executor, Future, ThreadPoolExecutor
 from email.message import Message
+from itertools import pairwise
+from typing import Any
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 from urllib.parse import urlsplit
@@ -15,13 +20,18 @@ from scripts.http_load_profile import (
     HTTP_5XX_RATE_LIMIT,
     MAX_CONCURRENCY,
     MAX_RESPONSE_BYTES,
+    MAX_SCHEDULE_LAG_MS,
     P95_LIMIT_MS,
     PHASE0_DURATION_SECONDS,
+    PROFILE_COMPLETION_GRACE_SECONDS,
     REQUESTS_PER_SECOND,
     CompletedRequest,
     HttpObservation,
     LoadProfileConfig,
     LoadProfileError,
+    RunMeasurements,
+    _ActiveRequestCounter,
+    _execute_scheduled_request,
     _NoRedirectHandler,
     _validate_local_url,
     build_report,
@@ -45,6 +55,41 @@ class FakeClock:
     def sleep(self, seconds: float) -> None:
         assert seconds >= 0
         self.value += seconds
+
+
+class OversleepOnceClock(FakeClock):
+    def __init__(self) -> None:
+        super().__init__()
+        self._overslept = False
+
+    def sleep(self, seconds: float) -> None:
+        super().sleep(seconds)
+        if not self._overslept:
+            self.value += 0.2
+            self._overslept = True
+
+
+class InlineExecutor(Executor):
+    """Deterministic executor for pacing tests; concurrency has a separate test."""
+
+    def submit[T](
+        self,
+        fn: Callable[..., T],
+        /,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Future[T]:
+        future: Future[T] = Future()
+        try:
+            future.set_result(fn(*args, **kwargs))
+        except BaseException as error:
+            future.set_exception(error)
+        return future
+
+
+def inline_executor_factory(max_workers: int) -> Executor:
+    assert max_workers == MAX_CONCURRENCY
+    return InlineExecutor()
 
 
 class FakeResponse:
@@ -107,6 +152,21 @@ def completed_requests(
     ]
 
 
+def run_measurements(
+    *,
+    elapsed_seconds: float,
+    max_schedule_lag_ms: float = 0.0,
+    schedule_lag_violations: int = 0,
+    observed_peak_active: int = 1,
+) -> RunMeasurements:
+    return RunMeasurements(
+        elapsed_seconds=elapsed_seconds,
+        max_schedule_lag_ms=max_schedule_lag_ms,
+        schedule_lag_violations=schedule_lag_violations,
+        observed_peak_active=observed_peak_active,
+    )
+
+
 def test_phase0_defaults_are_exact_and_smoke_is_explicitly_non_acceptance() -> None:
     phase0 = LoadProfileConfig(port=8000, detail_id=_DETAIL_ID)
     smoke = LoadProfileConfig(
@@ -120,6 +180,8 @@ def test_phase0_defaults_are_exact_and_smoke_is_explicitly_non_acceptance() -> N
     assert phase0.scheduled_requests == 9_000
     assert REQUESTS_PER_SECOND == 10
     assert MAX_CONCURRENCY == 20
+    assert MAX_SCHEDULE_LAG_MS == 100.0
+    assert PROFILE_COMPLETION_GRACE_SECONDS == 3.0
     assert phase0.label == "PHASE0_900S"
     assert smoke.label == "SMOKE_NON_ACCEPTANCE"
     with pytest.raises(LoadProfileError):
@@ -180,6 +242,7 @@ def test_smoke_runner_paces_ten_requests_and_emits_no_request_or_revision_values
         requester=requester,
         monotonic=clock.monotonic,
         sleeper=clock.sleep,
+        executor_factory=inline_executor_factory,
     )
 
     assert len(seen_urls) == 10
@@ -187,6 +250,14 @@ def test_smoke_runner_paces_ten_requests_and_emits_no_request_or_revision_values
     assert report.catalog_list_search_requests == 7
     assert report.detail_requests == 3
     assert report.throughput_rps == 10.0
+    assert report.elapsed_seconds == 1.0
+    assert report.max_schedule_lag_ms == 0.0
+    assert report.schedule_lag_violations == 0
+    assert report.observed_peak_active == 1
+    assert report.duration_contract_met is True
+    assert report.throughput_target_met is True
+    assert report.schedule_contract_met is True
+    assert report.concurrency_contract_met is True
     assert report.revision_consistent is True
     assert report.passed is True
     assert clock.value == 1.0
@@ -198,6 +269,116 @@ def test_smoke_runner_paces_ten_requests_and_emits_no_request_or_revision_values
     assert "%" not in receipt
 
 
+def test_phase0_runner_executes_exact_900_second_ten_rps_seventy_thirty_plan() -> None:
+    config = LoadProfileConfig(port=8123, detail_id=_DETAIL_ID)
+    clock = FakeClock()
+
+    def requester(_url: str, _port: int, _timeout: float) -> HttpObservation:
+        return observation()
+
+    report = run_profile(
+        config,
+        requester=requester,
+        monotonic=clock.monotonic,
+        sleeper=clock.sleep,
+        executor_factory=inline_executor_factory,
+    )
+
+    assert report.elapsed_seconds == 900.0
+    assert report.completed_requests == 9_000
+    assert report.catalog_list_search_requests == 6_300
+    assert report.detail_requests == 2_700
+    assert report.throughput_rps == 10.0
+    assert report.max_schedule_lag_ms == 0.0
+    assert report.workload_consistent is True
+    assert report.passed is True
+
+
+def test_end_to_end_latency_includes_schedule_queue_delay_through_completion() -> None:
+    clock = FakeClock()
+    clock.value = 0.3
+    active_counter = _ActiveRequestCounter()
+
+    def requester(_url: str, _port: int, _timeout: float) -> HttpObservation:
+        clock.value += 0.05
+        return observation(latency_ms=50.0)
+
+    timed = _execute_scheduled_request(
+        requester,
+        "http://127.0.0.1:8000/",
+        8000,
+        2.0,
+        0.1,
+        clock.monotonic,
+        active_counter,
+    )
+
+    assert timed.schedule_lag_ms == pytest.approx(200.0)
+    assert timed.observation.latency_ms == pytest.approx(250.0)
+    assert active_counter.peak == 1
+
+
+def test_material_scheduler_lag_never_creates_a_catch_up_burst_and_fails() -> None:
+    config = LoadProfileConfig(
+        port=8123,
+        detail_id=_DETAIL_ID,
+        duration_seconds=1,
+        profile="smoke",
+    )
+    clock = OversleepOnceClock()
+    request_started_at: list[float] = []
+
+    def requester(_url: str, _port: int, _timeout: float) -> HttpObservation:
+        request_started_at.append(clock.monotonic())
+        return observation(latency_ms=0.0)
+
+    report = run_profile(
+        config,
+        requester=requester,
+        monotonic=clock.monotonic,
+        sleeper=clock.sleep,
+        executor_factory=inline_executor_factory,
+    )
+
+    assert len(request_started_at) == 10
+    assert request_started_at[1] == pytest.approx(0.3)
+    assert all(
+        later - earlier == pytest.approx(0.1) for earlier, later in pairwise(request_started_at[1:])
+    )
+    assert report.max_schedule_lag_ms == pytest.approx(200.0)
+    assert report.schedule_lag_violations == 9
+    assert report.schedule_contract_met is False
+    assert report.passed is False
+
+
+def test_observed_active_requests_are_bounded_by_the_twenty_worker_executor() -> None:
+    active_counter = _ActiveRequestCounter()
+    all_active = threading.Barrier(MAX_CONCURRENCY)
+
+    def requester(_url: str, _port: int, _timeout: float) -> HttpObservation:
+        all_active.wait(timeout=5.0)
+        return observation(latency_ms=1.0)
+
+    scheduled_at = time.monotonic()
+    with ThreadPoolExecutor(max_workers=MAX_CONCURRENCY) as executor:
+        futures = [
+            executor.submit(
+                _execute_scheduled_request,
+                requester,
+                "http://127.0.0.1:8000/",
+                8000,
+                2.0,
+                scheduled_at,
+                time.monotonic,
+                active_counter,
+            )
+            for _index in range(MAX_CONCURRENCY)
+        ]
+        assert all(future.result().observation.valid for future in futures)
+
+    assert active_counter.peak == MAX_CONCURRENCY == 20
+
+
 def test_report_uses_nearest_rank_metrics_and_exact_release_thresholds() -> None:
     config = LoadProfileConfig(
         port=8000,
@@ -206,7 +387,11 @@ def test_report_uses_nearest_rank_metrics_and_exact_release_thresholds() -> None
         profile="smoke",
     )
     values = [observation(latency_ms=float(index)) for index in range(1, 101)]
-    report = build_report(config, completed_requests(values), elapsed_seconds=10.0)
+    report = build_report(
+        config,
+        completed_requests(values),
+        measurements=run_measurements(elapsed_seconds=10.0),
+    )
 
     assert report.p50_ms == 50.0
     assert report.p95_ms == 95.0
@@ -216,6 +401,49 @@ def test_report_uses_nearest_rank_metrics_and_exact_release_thresholds() -> None
     assert report.passed is True
     assert P95_LIMIT_MS == 500.0
     assert HTTP_5XX_RATE_LIMIT == 0.005
+
+
+def test_slow_drain_cannot_pass_elapsed_or_throughput_contract() -> None:
+    config = LoadProfileConfig(port=8000, detail_id=_DETAIL_ID)
+    values = [observation(latency_ms=100.0) for _index in range(8_551)] + [
+        observation(latency_ms=100_000.0) for _index in range(449)
+    ]
+    report = build_report(
+        config,
+        completed_requests(values),
+        measurements=run_measurements(
+            elapsed_seconds=3_600.0,
+            observed_peak_active=MAX_CONCURRENCY,
+        ),
+    )
+
+    # A socket-level timeout cannot forcibly stop a trusted loopback slow-drip peer.
+    # Once it returns, however, the bounded elapsed gate makes false acceptance impossible.
+    assert report.p95_ms == 100.0
+    assert report.throughput_rps == 2.5
+    assert report.duration_contract_met is False
+    assert report.throughput_target_met is False
+    assert report.passed is False
+
+
+def test_report_rejects_observed_concurrency_above_configured_bound() -> None:
+    config = LoadProfileConfig(
+        port=8000,
+        detail_id=_DETAIL_ID,
+        duration_seconds=1,
+        profile="smoke",
+    )
+    report = build_report(
+        config,
+        completed_requests([observation() for _index in range(10)]),
+        measurements=run_measurements(
+            elapsed_seconds=1.0,
+            observed_peak_active=MAX_CONCURRENCY + 1,
+        ),
+    )
+
+    assert report.concurrency_contract_met is False
+    assert report.passed is False
 
 
 @pytest.mark.parametrize("failure", ("latency", "http_5xx", "revision_mix", "error"))
@@ -240,7 +468,11 @@ def test_report_fails_for_each_release_blocker(failure: str) -> None:
     else:
         values[-1] = observation(valid=False)
 
-    report = build_report(config, completed_requests(values), elapsed_seconds=1.0)
+    report = build_report(
+        config,
+        completed_requests(values),
+        measurements=run_measurements(elapsed_seconds=1.0),
+    )
 
     assert report.passed is False
     if failure == "http_5xx":
@@ -265,8 +497,16 @@ def test_report_applies_strict_five_xx_rate_without_treating_it_as_runner_error(
         observation(status_code=500, valid=False, revision_token=None) for _index in range(5)
     ]
 
-    passing = build_report(config, completed_requests(within_limit), elapsed_seconds=100.0)
-    failing = build_report(config, completed_requests(at_limit), elapsed_seconds=100.0)
+    passing = build_report(
+        config,
+        completed_requests(within_limit),
+        measurements=run_measurements(elapsed_seconds=100.0),
+    )
+    failing = build_report(
+        config,
+        completed_requests(at_limit),
+        measurements=run_measurements(elapsed_seconds=100.0),
+    )
 
     assert passing.http_5xx_rate == 0.004
     assert passing.error_count == 0
@@ -299,6 +539,11 @@ def test_http_request_bounds_body_and_requires_status_cache_and_revision_header(
         FakeResponse(url=url, status=204),
         FakeResponse(url=url, cache_control="public, max-age=60"),
         FakeResponse(url=url, revision_token=None),
+        FakeResponse(url=url, revision_token="c" * 63),
+        FakeResponse(url=url, revision_token="C" * 64),
+        FakeResponse(url=url, revision_token="g" * 64),
+        FakeResponse(url=url, revision_token=f" {_REVISION_TOKEN}"),
+        FakeResponse(url=url, revision_token=f"{_REVISION_TOKEN} "),
         FakeResponse(url="http://127.0.0.1:8000/changed"),
         FakeResponse(url=url, body=b"x" * (MAX_RESPONSE_BYTES + 1)),
     )
@@ -370,7 +615,7 @@ def test_main_prints_only_safe_json_and_uses_report_exit_status(
             duration_seconds=1,
         ),
         completed_requests([observation() for _index in range(10)]),
-        elapsed_seconds=1.0,
+        measurements=run_measurements(elapsed_seconds=1.0),
     )
     with patch("scripts.http_load_profile.run_profile", return_value=report):
         exit_code = main(config_args)

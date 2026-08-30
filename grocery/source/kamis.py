@@ -357,7 +357,7 @@ def parse_recent_price_rows(
         if not isinstance(raw_row, Mapping):
             raise KamisParseError("row_not_object", row_index=row_index)
         row = _validate_row_shape(raw_row, row_index=row_index)
-        if not _is_target_scope(row):
+        if not _is_target_scope(row, identity_registry=identity_registry):
             _validate_contract_types(row, row_index=row_index)
             out_of_scope_row_hashes.append(_canonical_hash(row))
             continue
@@ -422,11 +422,17 @@ def _validate_contract_types(row: Mapping[str, object], *, row_index: int) -> No
         _parse_reference(period, row[field], row_index=row_index, field=field)
 
 
-def _is_target_scope(row: Mapping[str, object]) -> bool:
-    return (
-        row["se_cd"] == KAMIS_RETAIL_PRODUCT_CLASS_CODE
-        and row["ctgry_cd"] in KAMIS_ALLOWED_CATEGORIES
-    )
+def _is_target_scope(
+    row: Mapping[str, object],
+    *,
+    identity_registry: ExactIdentityRegistry,
+) -> bool:
+    if row["se_cd"] != KAMIS_RETAIL_PRODUCT_CLASS_CODE:
+        return False
+    if row["ctgry_cd"] not in KAMIS_ALLOWED_CATEGORIES:
+        return False
+    series_key = (row["ctgry_cd"], row["item_cd"], row["vrty_cd"], row["grd_cd"])
+    return series_key in identity_registry.units
 
 
 def _parse_row(

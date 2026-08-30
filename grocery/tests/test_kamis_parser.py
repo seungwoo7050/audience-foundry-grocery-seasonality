@@ -283,6 +283,25 @@ def test_out_of_scope_rows_are_reconciled_without_becoming_facts(
     assert result.input_row_count == result.accepted_row_count + result.out_of_scope_row_count
 
 
+def test_unreviewed_retail_series_is_out_of_scope(
+    identity_registry: ExactIdentityRegistry,
+) -> None:
+    row = deepcopy(SYNTHETIC_ROW)
+    row.update(
+        {
+            "item_cd": "999",
+            "item_nm": "검토되지않은합성품목",
+            "vrty_cd": "01",
+            "vrty_nm": "검토되지않은합성품종",
+        }
+    )
+
+    result = parse_recent_price_rows([row], identity_registry=identity_registry)
+
+    assert result.accepted_row_count == 0
+    assert result.out_of_scope_row_count == 1
+
+
 def test_out_of_scope_order_does_not_change_result_hash(
     identity_registry: ExactIdentityRegistry,
 ) -> None:

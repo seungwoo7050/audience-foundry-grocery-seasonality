@@ -20,8 +20,9 @@ from scripts.http_load_profile import (
     HTTP_5XX_RATE_LIMIT,
     MAX_CONCURRENCY,
     MAX_RESPONSE_BYTES,
-    MAX_SCHEDULE_LAG_MS,
+    NOMINAL_REQUEST_INTERVAL_MS,
     P95_LIMIT_MS,
+    P95_SCHEDULE_JITTER_LIMIT_MS,
     PHASE0_DURATION_SECONDS,
     PROFILE_COMPLETION_GRACE_SECONDS,
     REQUESTS_PER_SECOND,
@@ -67,6 +68,12 @@ class OversleepOnceClock(FakeClock):
         if not self._overslept:
             self.value += 0.2
             self._overslept = True
+
+
+class SmallOversleepClock(FakeClock):
+    def sleep(self, seconds: float) -> None:
+        super().sleep(seconds)
+        self.value += 0.002
 
 
 class InlineExecutor(Executor):
@@ -155,14 +162,18 @@ def completed_requests(
 def run_measurements(
     *,
     elapsed_seconds: float,
-    max_schedule_lag_ms: float = 0.0,
-    schedule_lag_violations: int = 0,
+    p95_schedule_jitter_ms: float = 0.0,
+    max_schedule_jitter_ms: float = 0.0,
+    minimum_inter_submission_ms: float = NOMINAL_REQUEST_INTERVAL_MS,
+    burst_interval_violations: int = 0,
     observed_peak_active: int = 1,
 ) -> RunMeasurements:
     return RunMeasurements(
         elapsed_seconds=elapsed_seconds,
-        max_schedule_lag_ms=max_schedule_lag_ms,
-        schedule_lag_violations=schedule_lag_violations,
+        p95_schedule_jitter_ms=p95_schedule_jitter_ms,
+        max_schedule_jitter_ms=max_schedule_jitter_ms,
+        minimum_inter_submission_ms=minimum_inter_submission_ms,
+        burst_interval_violations=burst_interval_violations,
         observed_peak_active=observed_peak_active,
     )
 
@@ -180,7 +191,8 @@ def test_phase0_defaults_are_exact_and_smoke_is_explicitly_non_acceptance() -> N
     assert phase0.scheduled_requests == 9_000
     assert REQUESTS_PER_SECOND == 10
     assert MAX_CONCURRENCY == 20
-    assert MAX_SCHEDULE_LAG_MS == 100.0
+    assert NOMINAL_REQUEST_INTERVAL_MS == 100.0
+    assert P95_SCHEDULE_JITTER_LIMIT_MS == 100.0
     assert PROFILE_COMPLETION_GRACE_SECONDS == 3.0
     assert phase0.label == "PHASE0_900S"
     assert smoke.label == "SMOKE_NON_ACCEPTANCE"
@@ -251,11 +263,15 @@ def test_smoke_runner_paces_ten_requests_and_emits_no_request_or_revision_values
     assert report.detail_requests == 3
     assert report.throughput_rps == 10.0
     assert report.elapsed_seconds == 1.0
-    assert report.max_schedule_lag_ms == 0.0
-    assert report.schedule_lag_violations == 0
+    assert report.p95_schedule_jitter_ms == 0.0
+    assert report.max_schedule_jitter_ms == 0.0
+    assert report.minimum_inter_submission_ms == 100.0
+    assert report.burst_interval_violations == 0
     assert report.observed_peak_active == 1
     assert report.duration_contract_met is True
     assert report.throughput_target_met is True
+    assert report.schedule_jitter_contract_met is True
+    assert report.no_burst_contract_met is True
     assert report.schedule_contract_met is True
     assert report.concurrency_contract_met is True
     assert report.revision_consistent is True
@@ -289,7 +305,9 @@ def test_phase0_runner_executes_exact_900_second_ten_rps_seventy_thirty_plan() -
     assert report.catalog_list_search_requests == 6_300
     assert report.detail_requests == 2_700
     assert report.throughput_rps == 10.0
-    assert report.max_schedule_lag_ms == 0.0
+    assert report.p95_schedule_jitter_ms == 0.0
+    assert report.minimum_inter_submission_ms == 100.0
+    assert report.burst_interval_violations == 0
     assert report.workload_consistent is True
     assert report.passed is True
 
@@ -313,18 +331,13 @@ def test_end_to_end_latency_includes_schedule_queue_delay_through_completion() -
         active_counter,
     )
 
-    assert timed.schedule_lag_ms == pytest.approx(200.0)
+    assert timed.schedule_jitter_ms == pytest.approx(200.0)
     assert timed.observation.latency_ms == pytest.approx(250.0)
     assert active_counter.peak == 1
 
 
-def test_material_scheduler_lag_never_creates_a_catch_up_burst_and_fails() -> None:
-    config = LoadProfileConfig(
-        port=8123,
-        detail_id=_DETAIL_ID,
-        duration_seconds=1,
-        profile="smoke",
-    )
+def test_one_scheduler_stall_is_not_repeated_and_never_creates_a_catch_up_burst() -> None:
+    config = LoadProfileConfig(port=8123, detail_id=_DETAIL_ID)
     clock = OversleepOnceClock()
     request_started_at: list[float] = []
 
@@ -340,15 +353,44 @@ def test_material_scheduler_lag_never_creates_a_catch_up_burst_and_fails() -> No
         executor_factory=inline_executor_factory,
     )
 
-    assert len(request_started_at) == 10
+    assert len(request_started_at) == 9_000
     assert request_started_at[1] == pytest.approx(0.3)
     assert all(
         later - earlier == pytest.approx(0.1) for earlier, later in pairwise(request_started_at[1:])
     )
-    assert report.max_schedule_lag_ms == pytest.approx(200.0)
-    assert report.schedule_lag_violations == 9
-    assert report.schedule_contract_met is False
-    assert report.passed is False
+    assert report.elapsed_seconds == pytest.approx(900.1)
+    assert report.max_schedule_jitter_ms == pytest.approx(200.0)
+    assert report.p95_schedule_jitter_ms == 0.0
+    assert report.minimum_inter_submission_ms == pytest.approx(100.0)
+    assert report.burst_interval_violations == 0
+    assert report.schedule_jitter_contract_met is True
+    assert report.no_burst_contract_met is True
+    assert report.schedule_contract_met is True
+    assert report.passed is True
+
+
+def test_small_repeated_clock_jitter_preserves_inter_submission_rate() -> None:
+    config = LoadProfileConfig(
+        port=8123,
+        detail_id=_DETAIL_ID,
+        duration_seconds=1,
+        profile="smoke",
+    )
+    clock = SmallOversleepClock()
+
+    report = run_profile(
+        config,
+        requester=lambda _url, _port, _timeout: observation(latency_ms=0.0),
+        monotonic=clock.monotonic,
+        sleeper=clock.sleep,
+        executor_factory=inline_executor_factory,
+    )
+
+    assert report.p95_schedule_jitter_ms == pytest.approx(2.0)
+    assert report.minimum_inter_submission_ms == pytest.approx(102.0)
+    assert report.burst_interval_violations == 0
+    assert report.no_burst_contract_met is True
+    assert report.passed is True
 
 
 def test_observed_active_requests_are_bounded_by_the_twenty_worker_executor() -> None:
@@ -444,6 +486,40 @@ def test_report_rejects_observed_concurrency_above_configured_bound() -> None:
 
     assert report.concurrency_contract_met is False
     assert report.passed is False
+
+
+@pytest.mark.parametrize("failure", ("jitter", "burst"))
+def test_report_rejects_persistent_schedule_jitter_or_catch_up_burst(failure: str) -> None:
+    config = LoadProfileConfig(
+        port=8000,
+        detail_id=_DETAIL_ID,
+        duration_seconds=1,
+        profile="smoke",
+    )
+    if failure == "jitter":
+        measurements = run_measurements(
+            elapsed_seconds=1.0,
+            p95_schedule_jitter_ms=P95_SCHEDULE_JITTER_LIMIT_MS + 0.001,
+        )
+    else:
+        measurements = run_measurements(
+            elapsed_seconds=1.0,
+            minimum_inter_submission_ms=99.0,
+            burst_interval_violations=1,
+        )
+
+    report = build_report(
+        config,
+        completed_requests([observation() for _index in range(10)]),
+        measurements=measurements,
+    )
+
+    assert report.schedule_contract_met is False
+    assert report.passed is False
+    if failure == "jitter":
+        assert report.schedule_jitter_contract_met is False
+    else:
+        assert report.no_burst_contract_met is False
 
 
 @pytest.mark.parametrize("failure", ("latency", "http_5xx", "revision_mix", "error"))

@@ -1817,6 +1817,314 @@ def record_review_decision(
     return candidate, True
 
 
+class PublicationRevision(models.Model):
+    """Immutable, sealed recent-retail publication over one approved generation."""
+
+    FACT_HASH_VERSION = "recent-retail-fact-set-v1"
+
+    class Channel(models.TextChoices):
+        RECENT_RETAIL = "RECENT_RETAIL", "Recent retail"
+
+    class Mode(models.TextChoices):
+        RECENT_COMPARISON = "RECENT_COMPARISON", "Recent comparison"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    channel = models.CharField(
+        max_length=32,
+        choices=Channel.choices,
+        default=Channel.RECENT_RETAIL,
+    )
+    mode = models.CharField(
+        max_length=32,
+        choices=Mode.choices,
+        default=Mode.RECENT_COMPARISON,
+    )
+    review_decision = models.ForeignKey(
+        ReviewDecision,
+        on_delete=models.PROTECT,
+        related_name="publication_revisions",
+    )
+    generation = models.ForeignKey(
+        ParseRun,
+        on_delete=models.PROTECT,
+        related_name="publication_revisions",
+    )
+    parser_revision = models.CharField(max_length=64)
+    fact_hash_version = models.CharField(
+        max_length=64,
+        default=FACT_HASH_VERSION,
+        editable=False,
+    )
+    typed_fact_set_sha256 = models.CharField(
+        max_length=64,
+        validators=[sha256_validator],
+    )
+    entry_count = models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    source_effective_date_min = models.DateField()
+    source_effective_date_max = models.DateField()
+    public_copy_revision = models.CharField(
+        max_length=64,
+        validators=[RegexValidator(r"^[a-z0-9][a-z0-9._-]{0,63}$")],
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    sealed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("channel", "typed_fact_set_sha256", "public_copy_revision"),
+                name="grocery_publication_set_copy_uniq",
+            ),
+            models.CheckConstraint(
+                condition=Q(channel="RECENT_RETAIL"),
+                name="grocery_publication_channel_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(mode="RECENT_COMPARISON"),
+                name="grocery_publication_mode_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(fact_hash_version="recent-retail-fact-set-v1"),
+                name="grocery_publication_hash_version_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(typed_fact_set_sha256__regex=SHA256_PATTERN),
+                name="grocery_publication_set_hash_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(entry_count__gt=0),
+                name="grocery_publication_entry_count_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(source_effective_date_max__gte=F("source_effective_date_min")),
+                name="grocery_publication_date_range_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(public_copy_revision__regex=r"^[a-z0-9][a-z0-9._-]{0,63}$"),
+                name="grocery_publication_copy_revision_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(sealed_at__isnull=True) | Q(sealed_at__gte=F("created_at")),
+                name="grocery_publication_seal_time_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.channel}:{self.typed_fact_set_sha256}:{self.public_copy_revision}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ValidationError("Publication revisions are immutable after construction.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        raise ValidationError("Publication revisions are immutable after construction.")
+
+
+class PublicationEntry(models.Model):
+    """Immutable ordered snapshot membership in one publication revision."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    revision = models.ForeignKey(
+        PublicationRevision,
+        on_delete=models.PROTECT,
+        related_name="entries",
+    )
+    snapshot = models.ForeignKey(
+        RetailPriceSnapshot,
+        on_delete=models.PROTECT,
+        related_name="publication_entries",
+    )
+    ordinal = models.PositiveIntegerField(validators=[MinValueValidator(1)])
+    fact_sha256 = models.CharField(max_length=64, validators=[sha256_validator])
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("revision", "ordinal"),
+                name="grocery_publication_entry_ordinal_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=("revision", "snapshot"),
+                name="grocery_publication_entry_snapshot_uniq",
+            ),
+            models.CheckConstraint(
+                condition=Q(ordinal__gt=0),
+                name="grocery_publication_entry_ordinal_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(fact_sha256__regex=SHA256_PATTERN),
+                name="grocery_publication_entry_hash_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.revision_id}:{self.ordinal}:{self.snapshot_id}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ValidationError("Publication entries are immutable.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        raise ValidationError("Publication entries are immutable.")
+
+    def clean(self) -> None:
+        super().clean()
+        if not self.revision_id or not self.snapshot_id:
+            return
+        if self.revision.sealed_at is not None:
+            raise ValidationError("Publication entries can only be added before sealing.")
+        if self.snapshot.parse_run_id != self.revision.generation_id:
+            raise ValidationError("Publication entries must belong to the revision generation.")
+
+
+@transaction.atomic
+def seal_recent_publication(
+    decision_id: uuid.UUID,
+    public_copy_revision: str,
+) -> PublicationRevision:
+    """Seal the complete typed fact set approved by the current review tail."""
+
+    from grocery.publication_facts import (  # Avoid a models/publication_facts import cycle.
+        FACT_SET_HASH_VERSION,
+        build_publication_fact_set,
+    )
+
+    decision = (
+        ReviewDecision.objects.select_for_update()
+        .select_related("source_configuration", "parse_run")
+        .get(pk=decision_id)
+    )
+    generation_decisions = list(
+        ReviewDecision.objects.select_for_update().filter(
+            source_configuration_id=decision.source_configuration_id,
+            source_artifact_id=decision.source_artifact_id,
+            parse_run_id=decision.parse_run_id,
+        )
+    )
+    tails = [
+        candidate
+        for candidate in generation_decisions
+        if not any(other.supersedes_id == candidate.id for other in generation_decisions)
+    ]
+    if len(tails) != 1 or tails[0].id != decision.id:
+        raise ValidationError("Publication requires the latest review decision tail.")
+    if decision.decision != ReviewDecision.Decision.APPROVE:
+        raise ValidationError("Publication requires a latest APPROVE review decision.")
+
+    source_configuration = SourceConfiguration.objects.select_for_update().get(
+        pk=decision.source_configuration_id
+    )
+    generation = ParseRun.objects.select_for_update().get(pk=decision.parse_run_id)
+    if (
+        decision.parse_run_id != generation.id
+        or decision.approved_mode != SourceConfiguration.PublicationMode.RECENT_COMPARISON
+        or source_configuration.publication_mode
+        != SourceConfiguration.PublicationMode.RECENT_COMPARISON
+        or decision.approved_mode != source_configuration.publication_mode
+        or decision.approved_coverage_identity != source_configuration.coverage_identity
+        or decision.approved_coverage_evidence_revision
+        != source_configuration.coverage_evidence_revision
+        or generation.status != ParseRun.Status.VALIDATED
+        or not generation.parser_revision
+    ):
+        raise ValidationError(
+            "Publication decision, generation, parser, mode, and coverage must match exactly."
+        )
+
+    snapshots = list(
+        RetailPriceSnapshot.objects.select_for_update()
+        .filter(parse_run=generation)
+        .select_related("series")
+        .prefetch_related("reference_prices__change_fact")
+    )
+    list(ReferencePrice.objects.select_for_update().filter(snapshot__parse_run=generation))
+    list(
+        PriceChangeFact.objects.select_for_update().filter(
+            reference_price__snapshot__parse_run=generation
+        )
+    )
+    if len(snapshots) != generation.accepted_row_count:
+        raise ValidationError("Publication membership must equal the accepted generation count.")
+    if any(
+        snapshot.series.coverage_identity != decision.approved_coverage_identity
+        for snapshot in snapshots
+    ):
+        raise ValidationError("Publication snapshot coverage must match the approved coverage.")
+
+    fact_set = build_publication_fact_set(snapshots)
+    semantic_fields: dict[str, object] = {
+        "channel": PublicationRevision.Channel.RECENT_RETAIL,
+        "mode": PublicationRevision.Mode.RECENT_COMPARISON,
+        "review_decision_id": decision.id,
+        "generation_id": generation.id,
+        "parser_revision": generation.parser_revision,
+        "fact_hash_version": FACT_SET_HASH_VERSION,
+        "typed_fact_set_sha256": fact_set.typed_fact_set_sha256,
+        "entry_count": len(fact_set.entries),
+        "source_effective_date_min": fact_set.source_effective_date_min,
+        "source_effective_date_max": fact_set.source_effective_date_max,
+        "public_copy_revision": public_copy_revision,
+    }
+    candidate = PublicationRevision(**semantic_fields)
+    candidate.full_clean(validate_unique=False, validate_constraints=False)
+
+    existing = (
+        PublicationRevision.objects.select_for_update()
+        .filter(
+            channel=PublicationRevision.Channel.RECENT_RETAIL,
+            typed_fact_set_sha256=fact_set.typed_fact_set_sha256,
+            public_copy_revision=public_copy_revision,
+        )
+        .first()
+    )
+    if existing is not None:
+        if existing.sealed_at is None or any(
+            getattr(existing, field_name) != field_value
+            for field_name, field_value in semantic_fields.items()
+        ):
+            raise ValidationError("Publication replay conflicts with stored sealed evidence.")
+        stored_entries = list(existing.entries.order_by("ordinal"))
+        expected_entries = list(fact_set.entries)
+        if len(stored_entries) != len(expected_entries) or any(
+            (
+                stored.ordinal,
+                stored.snapshot_id,
+                stored.fact_sha256,
+            )
+            != (
+                expected.ordinal,
+                expected.snapshot_id,
+                expected.fact_sha256,
+            )
+            for stored, expected in zip(stored_entries, expected_entries, strict=True)
+        ):
+            raise ValidationError("Publication replay conflicts with stored membership.")
+        return existing
+
+    candidate.save()
+    for entry in fact_set.entries:
+        PublicationEntry.objects.create(
+            revision=candidate,
+            snapshot_id=entry.snapshot_id,
+            ordinal=entry.ordinal,
+            fact_sha256=entry.fact_sha256,
+        )
+
+    sealed_at = timezone.now()
+    updated = PublicationRevision.objects.filter(
+        pk=candidate.pk,
+        sealed_at__isnull=True,
+    ).update(sealed_at=sealed_at)
+    if updated != 1:
+        raise ValidationError("Publication seal transition did not affect exactly one revision.")
+    candidate.refresh_from_db()
+    return candidate
+
+
 def ordered_page_manifest_sha256(receipts: Sequence[PageReceipt]) -> str:
     manifest = [receipt.body_sha256 for receipt in receipts]
     canonical = json.dumps(manifest, ensure_ascii=True, separators=(",", ":")).encode("ascii")

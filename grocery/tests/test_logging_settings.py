@@ -21,6 +21,18 @@ class LoggingSettingsTests(SimpleTestCase):
         self.assertFalse(loggers["django.request"]["propagate"])
         self.assertFalse(loggers["django.server"]["propagate"])
 
+    def test_public_security_middleware_order_is_fail_closed(self) -> None:
+        middleware = list(settings.MIDDLEWARE)
+
+        self.assertLess(
+            middleware.index("grocery.security.SecurityHeadersMiddleware"),
+            middleware.index("grocery.observability.RequestIdMiddleware"),
+        )
+        self.assertLess(
+            middleware.index("grocery.observability.RequestIdMiddleware"),
+            middleware.index("grocery.security.AdminExposureMiddleware"),
+        )
+
     def test_audit_logger_uses_only_structured_allowlisted_output(self) -> None:
         logging_config = cast(dict[str, Any], settings.LOGGING)
         logger = logging_config["loggers"]["grocery.audit"]

@@ -42,6 +42,7 @@ def database_config() -> dict[str, object]:
 
 
 DEBUG = env_bool("DJANGO_DEBUG", True)
+ADMIN_ENABLED = env_bool("ADMIN_ENABLED", DEBUG)
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "local-development-only-not-for-production")
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "")
@@ -58,7 +59,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "grocery.security.SecurityHeadersMiddleware",
     "grocery.observability.RequestIdMiddleware",
+    "grocery.security.AdminExposureMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",

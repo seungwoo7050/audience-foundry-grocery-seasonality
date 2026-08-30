@@ -1,12 +1,17 @@
 UV_RUN := env UV_CACHE_DIR=.cache/uv UV_TOOL_DIR=.cache/uv-tools UV_PYTHON_INSTALL_DIR=.cache/python uvx --from uv==0.12.6 uv
 PYTHON := .venv/bin/python
 
+# The source credential belongs only to the explicit ingestion process. Even if a
+# developer exported it in the parent shell, no Make recipe or assurance tool may
+# inherit it. secret-check reads the ignored owner-only file in its own process.
+unexport KAMIS_API_KEY
+
 # production-check requires explicit DJANGO_DEBUG=0, ADMIN_ENABLED=0,
 # DJANGO_SECRET_KEY, DJANGO_ALLOWED_HOSTS, DJANGO_CSRF_TRUSTED_ORIGINS,
 # DATABASE_URL, and the exact 40-character lowercase release DEPLOY_VERSION.
 # Its secret-check reads the ignored owner-only .env.local in-process; do not export
 # KAMIS_API_KEY into Make, a command argument, or a child-process environment.
-.PHONY: check db-up dependency-audit format-check license-inventory lint local-release-db-check migrate migration-check production-check production-env-check runtime-sync secret-check serve sync test type
+.PHONY: check db-up dependency-audit format-check license-inventory lint local-release-db-check migrate migration-check production-check production-env-check runtime-sync secret-check serve source-secret-env-check sync test type
 
 sync:
 	$(UV_RUN) sync --frozen
@@ -61,10 +66,14 @@ production-env-check:
 	@test "$${#DEPLOY_VERSION}" -eq 40 || { echo "production_check=failed code=release_sha_required"; exit 2; }
 	@case "$${DEPLOY_VERSION}" in *[!0-9a-f]*) echo "production_check=failed code=release_sha_required"; exit 2;; esac
 
+source-secret-env-check:
+	@test -z "$${KAMIS_API_KEY+x}" || { echo "source_secret_environment=failed code=ambient_source_secret_inherited"; exit 2; }
+	@echo "source_secret_environment=absent"
+
 local-release-db-check:
 	$(PYTHON) -m scripts.local_release_database_check
 
-production-check: production-env-check local-release-db-check check secret-check dependency-audit license-inventory
+production-check: source-secret-env-check production-env-check local-release-db-check check secret-check dependency-audit license-inventory
 	$(PYTHON) manage.py check --deploy --fail-level WARNING
 
 serve:

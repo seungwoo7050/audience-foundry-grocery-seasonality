@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import io
 import json
+import runpy
 import signal
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -19,6 +21,7 @@ from urllib.parse import urlsplit
 import pytest
 
 from scripts.http_load_profile import (
+    _CHILD_BOOTSTRAP,
     CLI_TERMINATION_GRACE_SECONDS,
     CLI_WATCHDOG_GRACE_SECONDS,
     HTTP_5XX_RATE_LIMIT,
@@ -38,9 +41,14 @@ from scripts.http_load_profile import (
     LoadProfileError,
     RunMeasurements,
     _ActiveRequestCounter,
+    _ChildOutputLimitError,
+    _collect_child_output,
+    _entrypoint,
     _execute_scheduled_request,
     _NoRedirectHandler,
+    _terminate_child,
     _validate_local_url,
+    _validated_child_output,
     build_report,
     http_request,
     main,
@@ -904,10 +912,14 @@ def test_supervised_cli_reprints_only_a_validated_child_receipt(
         measurements=run_measurements(elapsed_seconds=1.0),
     )
     child = MagicMock()
-    child.communicate.return_value = (f"{report.render()}\n", None)
-    child.returncode = 0
 
-    with patch("scripts.http_load_profile.subprocess.Popen", return_value=child) as popen:
+    with (
+        patch("scripts.http_load_profile.subprocess.Popen", return_value=child) as popen,
+        patch(
+            "scripts.http_load_profile._collect_child_output",
+            return_value=(f"{report.render()}\n", 0),
+        ) as collect_child_output,
+    ):
         exit_code = supervised_main(arguments)
 
     output = capsys.readouterr().out
@@ -925,7 +937,7 @@ def test_supervised_cli_reprints_only_a_validated_child_receipt(
         "PYTHONUNBUFFERED",
         "PYTHONUTF8",
     }
-    assert child.communicate.call_args.kwargs["timeout"] == pytest.approx(
+    assert collect_child_output.call_args.kwargs["timeout_seconds"] == pytest.approx(
         1.0 + CLI_WATCHDOG_GRACE_SECONDS
     )
 
@@ -946,25 +958,16 @@ def test_supervised_cli_kills_stubborn_child_and_redacts_timeout_details(
     private_output = f"private={_DETAIL_ID};revision={_REVISION_TOKEN}"
     child = MagicMock()
     child.pid = 4_321
-    child.returncode = None
-    child.poll.return_value = None
-    child.communicate.side_effect = (
-        subprocess.TimeoutExpired(
-            cmd=("private-command", str(_DETAIL_ID)),
-            timeout=1.0 + CLI_WATCHDOG_GRACE_SECONDS,
-            output=private_output,
-        ),
-        subprocess.TimeoutExpired(
-            cmd="private-command",
-            timeout=CLI_TERMINATION_GRACE_SECONDS,
-            output=private_output,
-        ),
-        (private_output, None),
+    timeout = subprocess.TimeoutExpired(
+        cmd=("private-command", str(_DETAIL_ID)),
+        timeout=1.0 + CLI_WATCHDOG_GRACE_SECONDS,
+        output=private_output,
     )
 
     with (
         patch("scripts.http_load_profile.subprocess.Popen", return_value=child),
-        patch("scripts.http_load_profile.os.killpg") as kill_process_group,
+        patch("scripts.http_load_profile._collect_child_output", side_effect=timeout),
+        patch("scripts.http_load_profile._terminate_child") as terminate_child,
     ):
         exit_code = supervised_main(arguments)
 
@@ -979,10 +982,7 @@ def test_supervised_cli_kills_stubborn_child_and_redacts_timeout_details(
     assert str(_DETAIL_ID) not in output
     assert _REVISION_TOKEN not in output
     assert "private-command" not in output
-    assert kill_process_group.call_args_list == [
-        ((4_321, signal.SIGTERM),),
-        ((4_321, signal.SIGKILL),),
-    ]
+    terminate_child.assert_called_once_with(child)
 
 
 def test_supervised_cli_redacts_process_creation_failure(
@@ -1015,6 +1015,45 @@ def test_supervised_cli_redacts_process_creation_failure(
     assert _REVISION_TOKEN not in output
 
 
+def test_supervised_cli_redacts_unexpected_validator_failure(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    arguments = [
+        "--port",
+        "8000",
+        "--detail-id",
+        str(_DETAIL_ID),
+        "--profile",
+        "smoke",
+        "--duration-seconds",
+        "1",
+    ]
+    private_error = RuntimeError(f"validator failed {_DETAIL_ID} {_REVISION_TOKEN}")
+
+    with (
+        patch("scripts.http_load_profile.subprocess.Popen", return_value=MagicMock()),
+        patch(
+            "scripts.http_load_profile._collect_child_output",
+            return_value=("{}\n", 0),
+        ),
+        patch(
+            "scripts.http_load_profile._validated_child_output",
+            side_effect=private_error,
+        ),
+    ):
+        exit_code = supervised_main(arguments)
+
+    output = capsys.readouterr().out
+    assert exit_code == 2
+    assert json.loads(output) == {
+        "error": "CHILD_RESULT_INVALID",
+        "passed": False,
+        "profile": "SMOKE_NON_ACCEPTANCE",
+    }
+    assert str(_DETAIL_ID) not in output
+    assert _REVISION_TOKEN not in output
+
+
 @pytest.mark.parametrize(
     "child_output",
     (
@@ -1038,10 +1077,14 @@ def test_supervised_cli_rejects_unvalidated_child_output_without_reflection(
         "1",
     ]
     child = MagicMock()
-    child.communicate.return_value = (child_output, None)
-    child.returncode = 0
 
-    with patch("scripts.http_load_profile.subprocess.Popen", return_value=child):
+    with (
+        patch("scripts.http_load_profile.subprocess.Popen", return_value=child),
+        patch(
+            "scripts.http_load_profile._collect_child_output",
+            return_value=(child_output, 0),
+        ),
+    ):
         exit_code = supervised_main(arguments)
 
     output = capsys.readouterr().out
@@ -1055,3 +1098,255 @@ def test_supervised_cli_rejects_unvalidated_child_output_without_reflection(
     assert "token=value" not in output
     assert str(_DETAIL_ID) not in output
     assert "민감한 오류" not in output
+
+
+def test_parent_recomputes_derived_gates_before_accepting_child_receipt() -> None:
+    config = LoadProfileConfig(
+        port=8000,
+        detail_id=_DETAIL_ID,
+        profile="smoke",
+        duration_seconds=1,
+    )
+    report = build_report(
+        config,
+        completed_requests([observation() for _index in range(10)]),
+        measurements=run_measurements(elapsed_seconds=1.0),
+    )
+    variants: list[dict[str, object]] = []
+    for mutation in ("throughput", "counts", "latency"):
+        payload = json.loads(report.render())
+        if mutation == "throughput":
+            payload["timing"]["throughput_rps"] = 0.0
+        elif mutation == "counts":
+            payload["counts"].update(
+                {
+                    "completed": 0,
+                    "catalog_list_search": 0,
+                    "detail": 0,
+                    "successful": 0,
+                }
+            )
+            payload["timing"]["throughput_rps"] = 0.0
+        else:
+            payload["latency_ms"]["p95"] = P95_LIMIT_MS + 1.0
+            payload["latency_ms"]["max"] = P95_LIMIT_MS + 1.0
+        variants.append(payload)
+
+    for payload in variants:
+        encoded = json.dumps(
+            payload,
+            ensure_ascii=True,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        assert (
+            _validated_child_output(
+                f"{encoded}\n",
+                return_code=0,
+                config=config,
+            )
+            is None
+        )
+
+
+def test_parent_accepts_genuine_receipts_across_three_decimal_rounding_boundaries() -> None:
+    config = LoadProfileConfig(
+        port=8000,
+        detail_id=_DETAIL_ID,
+        profile="smoke",
+        duration_seconds=1,
+    )
+    passing_after_small_overrun = build_report(
+        config,
+        completed_requests([observation() for _index in range(10)]),
+        measurements=run_measurements(elapsed_seconds=1.0002),
+    )
+    passing_with_distinct_rounded_throughput = build_report(
+        config,
+        completed_requests([observation() for _index in range(10)]),
+        measurements=run_measurements(elapsed_seconds=1.0038),
+    )
+    failing_after_completion_boundary = build_report(
+        config,
+        completed_requests([observation() for _index in range(10)]),
+        measurements=run_measurements(elapsed_seconds=4.0004),
+    )
+    failing_after_jitter_boundary = build_report(
+        config,
+        completed_requests([observation() for _index in range(10)]),
+        measurements=run_measurements(
+            elapsed_seconds=1.0,
+            p95_schedule_jitter_ms=P95_SCHEDULE_JITTER_LIMIT_MS + 0.0004,
+            max_schedule_jitter_ms=P95_SCHEDULE_JITTER_LIMIT_MS + 0.0004,
+        ),
+    )
+    failing_after_latency_boundary = build_report(
+        config,
+        completed_requests(
+            [observation() for _index in range(9)] + [observation(latency_ms=P95_LIMIT_MS + 0.0004)]
+        ),
+        measurements=run_measurements(elapsed_seconds=1.0),
+    )
+
+    assert passing_after_small_overrun.elapsed_seconds == 1.0
+    assert passing_after_small_overrun.throughput_rps == 9.998
+    assert passing_after_small_overrun.passed is True
+    assert passing_with_distinct_rounded_throughput.elapsed_seconds == 1.004
+    assert passing_with_distinct_rounded_throughput.throughput_rps == 9.962
+    assert passing_with_distinct_rounded_throughput.passed is True
+    cases = (
+        (passing_after_small_overrun, 0),
+        (passing_with_distinct_rounded_throughput, 0),
+        (failing_after_completion_boundary, 1),
+        (failing_after_jitter_boundary, 1),
+        (failing_after_latency_boundary, 1),
+    )
+    for report, return_code in cases:
+        assert (
+            _validated_child_output(
+                f"{report.render()}\n",
+                return_code=return_code,
+                config=config,
+            )
+            == report.render()
+        )
+
+
+def test_streaming_child_output_enforces_hard_byte_cap_before_buffering_all() -> None:
+    process = subprocess.Popen(  # noqa: S603 - fixed local test interpreter command.
+        [
+            sys.executable,
+            "-c",
+            "import sys; sys.stdout.buffer.write(b'x' * 40000)",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        bufsize=0,
+        start_new_session=True,
+    )
+    try:
+        with pytest.raises(_ChildOutputLimitError):
+            _collect_child_output(
+                process,
+                encoded_arguments=b"[]",
+                timeout_seconds=2.0,
+            )
+    finally:
+        _terminate_child(process)
+
+
+def test_streaming_child_output_enforces_deadline_without_waiting_for_eof() -> None:
+    process = MagicMock()
+    process.stdin = MagicMock()
+    process.stdout = MagicMock()
+    clock = FakeClock()
+    selector = MagicMock()
+    selector.__enter__.return_value = selector
+
+    def expire_selection(timeout: float) -> list[object]:
+        clock.sleep(timeout)
+        return []
+
+    selector.select.side_effect = expire_selection
+    with patch("scripts.http_load_profile.selectors.DefaultSelector", return_value=selector):
+        with pytest.raises(subprocess.TimeoutExpired):
+            _collect_child_output(
+                process,
+                encoded_arguments=b"[]",
+                timeout_seconds=0.05,
+                monotonic=clock.monotonic,
+            )
+
+    assert clock.value == pytest.approx(0.05)
+    process.stdin.write.assert_called_once_with(b"[]")
+    process.stdin.close.assert_called_once_with()
+    process.stdout.close.assert_called_once_with()
+
+
+def test_termination_kills_surviving_process_group_even_when_leader_exited() -> None:
+    process = MagicMock()
+    process.pid = 4_321
+    process.stdin = None
+    process.stdout = None
+    process.poll.return_value = 0
+    process.wait.return_value = 0
+    clock = FakeClock()
+
+    with (
+        patch("scripts.http_load_profile._process_group_exists", return_value=True),
+        patch("scripts.http_load_profile._signal_process_group") as signal_group,
+    ):
+        _terminate_child(
+            process,
+            monotonic=clock.monotonic,
+            sleeper=clock.sleep,
+        )
+
+    assert signal_group.call_count == 2
+    signal_group.assert_any_call(process, signal.SIGTERM)
+    signal_group.assert_any_call(process, signal.SIGKILL)
+    assert clock.value == pytest.approx(CLI_TERMINATION_GRACE_SECONDS)
+
+
+def test_entrypoint_routes_external_cli_to_supervisor() -> None:
+    external_arguments = ["--port", "invalid-private-value"]
+    with patch("scripts.http_load_profile.supervised_main", return_value=7) as supervisor:
+        assert _entrypoint(external_arguments) == 7
+        supervisor.assert_called_once_with(external_arguments)
+
+
+def test_real_child_bootstrap_reads_stdin_without_traceback_or_argument_reflection() -> None:
+    script_path = str(__file__).replace("tests/test_http_load_profile.py", "http_load_profile.py")
+    result = subprocess.run(  # noqa: S603 - fixed local test interpreter/script command.
+        [sys.executable, "-c", _CHILD_BOOTSTRAP, script_path],
+        input=b"[]",
+        capture_output=True,
+        timeout=2.0,
+        check=False,
+    )
+
+    assert result.returncode == 2
+    assert json.loads(result.stdout) == {
+        "error": "CONFIG_INVALID",
+        "passed": False,
+        "profile": "UNAVAILABLE",
+    }
+    assert result.stdout.count(b"\n") == 1
+    assert result.stderr == b""
+
+
+def test_real_main_module_dispatches_external_cli_through_supervisor(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    script_path = str(__file__).replace("tests/test_http_load_profile.py", "http_load_profile.py")
+    arguments = [
+        script_path,
+        "--port",
+        "8000",
+        "--detail-id",
+        str(_DETAIL_ID),
+        "--profile",
+        "smoke",
+        "--duration-seconds",
+        "1",
+    ]
+    private_error = OSError(f"process failed {_DETAIL_ID} {_REVISION_TOKEN}")
+
+    with (
+        patch.object(sys, "argv", arguments),
+        patch("subprocess.Popen", side_effect=private_error),
+        pytest.raises(SystemExit) as caught,
+    ):
+        runpy.run_path(script_path, run_name="__main__")
+
+    output = capsys.readouterr().out
+    assert caught.value.code == 2
+    assert json.loads(output) == {
+        "error": "SUPERVISOR_FAILED",
+        "passed": False,
+        "profile": "SMOKE_NON_ACCEPTANCE",
+    }
+    assert output.count("\n") == 1
+    assert str(_DETAIL_ID) not in output
+    assert _REVISION_TOKEN not in output

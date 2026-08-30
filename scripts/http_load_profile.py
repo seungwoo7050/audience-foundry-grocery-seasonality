@@ -14,6 +14,7 @@ import json
 import math
 import os
 import re
+import selectors
 import signal
 import subprocess
 import sys
@@ -54,6 +55,7 @@ NOMINAL_REQUEST_INTERVAL_MS: Final = 1000.0 / REQUESTS_PER_SECOND
 # 90 ms after the prior actual submission.
 RECOVERY_FLOOR_INTERVAL_MS: Final = 90.0
 _CLOCK_COMPARISON_EPSILON_MS: Final = 0.001
+_RECEIPT_ROUNDING_HALF_UNIT: Final = 0.0005001
 
 _LOCAL_HOST: Final = "127.0.0.1"
 _WORKLOAD_SLOTS: Final[tuple[str, ...]] = (
@@ -71,9 +73,14 @@ _WORKLOAD_SLOTS: Final[tuple[str, ...]] = (
 _POSITIVE_INTEGER = re.compile(r"[1-9][0-9]*\Z")
 _REVISION_SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _THREAD_STATE = threading.local()
-_CHILD_MODE: Final = "--internal-watchdog-child"
+_CHILD_BOOTSTRAP: Final = (
+    "import runpy,sys;"
+    "namespace=runpy.run_path(sys.argv[1]);"
+    "raise SystemExit(namespace['_child_main']())"
+)
 _MAX_CHILD_INPUT_CHARACTERS: Final = 4_096
-_MAX_CHILD_OUTPUT_CHARACTERS: Final = 32_768
+_MAX_CHILD_OUTPUT_BYTES: Final = 32_768
+_PROCESS_GROUP_POLL_INTERVAL_SECONDS: Final = 0.01
 
 type RequestKind = Literal["catalog", "detail"]
 type Requester = Callable[[str, int, float], "HttpObservation"]
@@ -979,19 +986,145 @@ def _validated_report_payload(
     completed_count = cast(int, counts["completed"])
     participated = cast(int, logical_users["participated"])
     observed_peak = cast(int, concurrency["observed_in_flight_peak"])
+    catalog_count = cast(int, counts["catalog_list_search"])
+    detail_count = cast(int, counts["detail"])
+    successful_count = cast(int, counts["successful"])
+    error_count = cast(int, counts["errors"])
+    http_5xx_count = cast(int, counts["http_5xx"])
+    elapsed_seconds = cast(float, timing["elapsed_seconds"])
+    throughput_rps = cast(float, timing["throughput_rps"])
+    minimum_accepted_throughput_rps = cast(float, timing["minimum_accepted_throughput_rps"])
+    p95_schedule_jitter_ms = cast(float, timing["p95_schedule_jitter_ms"])
+    minimum_inter_submission_ms = cast(float, timing["minimum_inter_submission_ms"])
+    burst_interval_violations = cast(int, timing["burst_interval_violations"])
+    elapsed_lower = max(0.0, elapsed_seconds - _RECEIPT_ROUNDING_HALF_UNIT)
+    elapsed_upper = elapsed_seconds + _RECEIPT_ROUNDING_HALF_UNIT
+    throughput_lower = max(0.0, throughput_rps - _RECEIPT_ROUNDING_HALF_UNIT)
+    throughput_upper = throughput_rps + _RECEIPT_ROUNDING_HALF_UNIT
+    if completed_count > 0:
+        if throughput_upper <= 0.0:
+            return None
+        throughput_elapsed_lower = completed_count / throughput_upper
+        throughput_elapsed_upper = (
+            completed_count / throughput_lower if throughput_lower > 0.0 else math.inf
+        )
+        feasible_elapsed_lower = max(elapsed_lower, throughput_elapsed_lower)
+        feasible_elapsed_upper = min(elapsed_upper, throughput_elapsed_upper)
+    else:
+        if not throughput_lower <= 0.0 <= throughput_upper:
+            return None
+        feasible_elapsed_lower = elapsed_lower
+        feasible_elapsed_upper = elapsed_upper
+    if feasible_elapsed_lower > feasible_elapsed_upper:
+        return None
+
+    expected_http_5xx_rate = round(
+        http_5xx_count / completed_count if completed_count else 1.0,
+        6,
+    )
+    raw_minimum_throughput = config.scheduled_requests / (
+        float(config.duration_seconds) + PROFILE_COMPLETION_GRACE_SECONDS
+    )
+    minimum_throughput_lower = max(
+        0.0,
+        minimum_accepted_throughput_rps - _RECEIPT_ROUNDING_HALF_UNIT,
+    )
+    minimum_throughput_upper = minimum_accepted_throughput_rps + _RECEIPT_ROUNDING_HALF_UNIT
+    if not minimum_throughput_lower <= raw_minimum_throughput <= minimum_throughput_upper:
+        return None
+
+    maximum_elapsed = float(config.duration_seconds) + PROFILE_COMPLETION_GRACE_SECONDS
+    duration_true_possible = bool(
+        feasible_elapsed_upper >= float(config.duration_seconds)
+        and feasible_elapsed_lower <= maximum_elapsed
+    )
+    duration_false_possible = bool(
+        feasible_elapsed_lower < float(config.duration_seconds)
+        or feasible_elapsed_upper > maximum_elapsed
+    )
+    throughput_true_possible = bool(throughput_upper >= raw_minimum_throughput)
+    throughput_false_possible = bool(throughput_lower < raw_minimum_throughput)
+    jitter_lower = max(
+        0.0,
+        p95_schedule_jitter_ms - _RECEIPT_ROUNDING_HALF_UNIT,
+    )
+    jitter_upper = p95_schedule_jitter_ms + _RECEIPT_ROUNDING_HALF_UNIT
+    jitter_true_possible = bool(jitter_lower <= P95_SCHEDULE_JITTER_LIMIT_MS)
+    jitter_false_possible = bool(jitter_upper > P95_SCHEDULE_JITTER_LIMIT_MS)
+    minimum_interval_lower = max(
+        0.0,
+        minimum_inter_submission_ms - _RECEIPT_ROUNDING_HALF_UNIT,
+    )
+    minimum_interval_upper = minimum_inter_submission_ms + _RECEIPT_ROUNDING_HALF_UNIT
+    no_burst_true_possible = bool(
+        burst_interval_violations == 0
+        and minimum_interval_upper + _CLOCK_COMPARISON_EPSILON_MS >= RECOVERY_FLOOR_INTERVAL_MS
+    )
+    no_burst_false_possible = bool(
+        burst_interval_violations != 0
+        or minimum_interval_lower + _CLOCK_COMPARISON_EPSILON_MS < RECOVERY_FLOOR_INTERVAL_MS
+    )
+    expected_concurrency_contract = bool(1 <= observed_peak <= MAX_CONCURRENCY)
+    expected_workload_contract = bool(
+        catalog_count == (config.scheduled_requests * 7) // 10
+        and detail_count == (config.scheduled_requests * 3) // 10
+    )
+    reported_duration_contract = cast(bool, timing["duration_contract_met"])
+    reported_throughput_contract = cast(bool, timing["throughput_target_met"])
+    reported_jitter_contract = cast(bool, timing["schedule_jitter_contract_met"])
+    reported_no_burst_contract = cast(bool, timing["no_burst_contract_met"])
+    reported_schedule_contract = cast(bool, timing["schedule_contract_met"])
+    reported_round_robin_contract = cast(
+        bool,
+        logical_users["round_robin_contract_met"],
+    )
+    base_pass_without_latency = bool(
+        completed_count == config.scheduled_requests
+        and expected_workload_contract
+        and error_count == 0
+        and cast(bool, report["revision_consistent"])
+        and expected_http_5xx_rate < HTTP_5XX_RATE_LIMIT
+        and reported_duration_contract
+        and reported_throughput_contract
+        and reported_schedule_contract
+        and reported_round_robin_contract
+        and expected_concurrency_contract
+    )
+    latency_p95_lower = max(
+        0.0,
+        cast(float, latency_ms["p95"]) - _RECEIPT_ROUNDING_HALF_UNIT,
+    )
+    latency_p95_upper = cast(float, latency_ms["p95"]) + _RECEIPT_ROUNDING_HALF_UNIT
+    pass_true_possible = bool(base_pass_without_latency and latency_p95_lower <= P95_LIMIT_MS)
+    pass_false_possible = bool(not base_pass_without_latency or latency_p95_upper > P95_LIMIT_MS)
+    reported_passed = cast(bool, report["passed"])
     if (
-        cast(int, counts["catalog_list_search"]) + cast(int, counts["detail"]) != completed_count
-        or cast(int, counts["successful"])
-        + cast(int, counts["errors"])
-        + cast(int, counts["http_5xx"])
-        != completed_count
-        or cast(float, report["http_5xx_rate"]) > 1.0
-        or cast(bool, concurrency["in_flight_within_limit"])
-        != (1 <= observed_peak <= MAX_CONCURRENCY)
+        catalog_count + detail_count != completed_count
+        or successful_count + error_count + http_5xx_count != completed_count
+        or cast(float, report["http_5xx_rate"]) != expected_http_5xx_rate
+        or not (
+            cast(float, latency_ms["p50"])
+            <= cast(float, latency_ms["p95"])
+            <= cast(float, latency_ms["max"])
+        )
+        or p95_schedule_jitter_ms > cast(float, timing["max_schedule_jitter_ms"])
+        or (reported_duration_contract and not duration_true_possible)
+        or (not reported_duration_contract and not duration_false_possible)
+        or (reported_throughput_contract and not throughput_true_possible)
+        or (not reported_throughput_contract and not throughput_false_possible)
+        or (reported_jitter_contract and not jitter_true_possible)
+        or (not reported_jitter_contract and not jitter_false_possible)
+        or (reported_no_burst_contract and not no_burst_true_possible)
+        or (not reported_no_burst_contract and not no_burst_false_possible)
+        or reported_schedule_contract != (reported_jitter_contract and reported_no_burst_contract)
+        or cast(bool, concurrency["in_flight_within_limit"]) != expected_concurrency_contract
+        or cast(bool, report["workload_consistent"]) != expected_workload_contract
         or (
-            cast(bool, logical_users["round_robin_contract_met"])
+            reported_round_robin_contract
             and participated != min(LOGICAL_VIRTUAL_USERS, config.scheduled_requests)
         )
+        or (reported_passed and not pass_true_possible)
+        or (not reported_passed and not pass_false_possible)
     ):
         return None
     return report
@@ -1004,7 +1137,7 @@ def _validated_child_output(
     config: LoadProfileConfig,
 ) -> str | None:
     if (
-        len(output) > _MAX_CHILD_OUTPUT_CHARACTERS
+        len(output) > _MAX_CHILD_OUTPUT_BYTES
         or not output.endswith("\n")
         or output.count("\n") != 1
     ):
@@ -1041,32 +1174,128 @@ def _validated_child_output(
     return _safe_failure(profile=config.label, code="RUNNER_FAILED")
 
 
-def _terminate_child(process: subprocess.Popen[str]) -> None:
-    if process.poll() is not None:
-        return
+class _ChildOutputLimitError(RuntimeError):
+    pass
+
+
+def _collect_child_output(
+    process: subprocess.Popen[bytes],
+    *,
+    encoded_arguments: bytes,
+    timeout_seconds: float,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> tuple[str, int]:
+    if process.stdin is None or process.stdout is None:
+        raise RuntimeError
     try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except OSError, ProcessLookupError:
-        try:
-            process.terminate()
-        except OSError:
-            return
-    try:
-        process.communicate(timeout=CLI_TERMINATION_GRACE_SECONDS)
-        return
-    except subprocess.TimeoutExpired:
+        process.stdin.write(encoded_arguments)
+    except BrokenPipeError:
         pass
-    except Exception:
-        return
+    finally:
+        process.stdin.close()
+
+    deadline = monotonic() + timeout_seconds
+    output = bytearray()
     try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except OSError, ProcessLookupError:
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ)
+            while True:
+                remaining = deadline - monotonic()
+                if remaining <= 0:
+                    raise subprocess.TimeoutExpired("load-profile-child", timeout_seconds)
+                if not selector.select(timeout=remaining):
+                    raise subprocess.TimeoutExpired("load-profile-child", timeout_seconds)
+                read_limit = min(
+                    8_192,
+                    (_MAX_CHILD_OUTPUT_BYTES + 1) - len(output),
+                )
+                chunk = os.read(process.stdout.fileno(), read_limit)
+                if not chunk:
+                    break
+                output.extend(chunk)
+                if len(output) > _MAX_CHILD_OUTPUT_BYTES:
+                    raise _ChildOutputLimitError
+    finally:
         try:
-            process.kill()
+            process.stdout.close()
+        except OSError:
+            pass
+
+    remaining = deadline - monotonic()
+    if remaining <= 0:
+        raise subprocess.TimeoutExpired("load-profile-child", timeout_seconds)
+    try:
+        return_code = process.wait(timeout=remaining)
+    except subprocess.TimeoutExpired:
+        raise subprocess.TimeoutExpired("load-profile-child", timeout_seconds) from None
+    try:
+        decoded_output = bytes(output).decode("ascii", errors="strict")
+    except UnicodeDecodeError:
+        raise _ChildOutputLimitError from None
+    return decoded_output, return_code
+
+
+def _process_group_exists(process_group_id: int) -> bool:
+    try:
+        os.killpg(process_group_id, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return True
+    return True
+
+
+def _signal_process_group(
+    process: subprocess.Popen[bytes],
+    selected_signal: signal.Signals,
+) -> None:
+    try:
+        os.killpg(process.pid, selected_signal)
+    except ProcessLookupError:
+        return
+    except OSError:
+        try:
+            if selected_signal == signal.SIGTERM:
+                process.terminate()
+            else:
+                process.kill()
         except OSError:
             return
+
+
+def _terminate_child(
+    process: subprocess.Popen[bytes],
+    *,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleeper: Callable[[float], None] = time.sleep,
+) -> None:
+    _signal_process_group(process, signal.SIGTERM)
+    deadline = monotonic() + CLI_TERMINATION_GRACE_SECONDS
+    process.poll()
+    while _process_group_exists(process.pid):
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            _signal_process_group(process, signal.SIGKILL)
+            break
+        sleeper(min(_PROCESS_GROUP_POLL_INTERVAL_SECONDS, remaining))
+        process.poll()
     try:
-        process.communicate(timeout=CLI_TERMINATION_GRACE_SECONDS)
+        process.wait(timeout=CLI_TERMINATION_GRACE_SECONDS)
+    except OSError, subprocess.TimeoutExpired:
+        pass
+    for pipe in (process.stdin, process.stdout):
+        if pipe is not None and not pipe.closed:
+            try:
+                pipe.close()
+            except OSError:
+                pass
+
+
+def _terminate_child_safely(process: subprocess.Popen[bytes]) -> None:
+    try:
+        _terminate_child(process)
     except Exception:
         return
 
@@ -1079,16 +1308,28 @@ def supervised_main(arguments: list[str] | None = None) -> int:
         print(_safe_failure(profile="UNAVAILABLE", code="CONFIG_INVALID"))
         return 2
 
-    process: subprocess.Popen[str] | None = None
+    encoded_arguments = json.dumps(
+        selected_arguments,
+        ensure_ascii=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    if len(encoded_arguments) > _MAX_CHILD_INPUT_CHARACTERS:
+        print(_safe_failure(profile="UNAVAILABLE", code="CONFIG_INVALID"))
+        return 2
+
+    process: subprocess.Popen[bytes] | None = None
     try:
         process = subprocess.Popen(  # noqa: S603 - fixed interpreter/script command.
-            [sys.executable, os.path.abspath(__file__), _CHILD_MODE],
+            [
+                sys.executable,
+                "-c",
+                _CHILD_BOOTSTRAP,
+                os.path.abspath(__file__),
+            ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
-            text=True,
-            encoding="utf-8",
-            errors="strict",
+            bufsize=0,
             close_fds=True,
             start_new_session=True,
             env={
@@ -1097,40 +1338,45 @@ def supervised_main(arguments: list[str] | None = None) -> int:
                 "PYTHONUTF8": "1",
             },
         )
-        output, _discarded_stderr = process.communicate(
-            input=json.dumps(
-                selected_arguments,
-                ensure_ascii=True,
-                separators=(",", ":"),
-            ),
-            timeout=float(config.duration_seconds) + CLI_WATCHDOG_GRACE_SECONDS,
+        output, return_code = _collect_child_output(
+            process,
+            encoded_arguments=encoded_arguments,
+            timeout_seconds=float(config.duration_seconds) + CLI_WATCHDOG_GRACE_SECONDS,
         )
     except subprocess.TimeoutExpired:
         if process is not None:
-            _terminate_child(process)
+            _terminate_child_safely(process)
         print(_safe_failure(profile=config.label, code="WATCHDOG_TIMEOUT"))
         return 2
     except KeyboardInterrupt:
         if process is not None:
-            _terminate_child(process)
+            _terminate_child_safely(process)
         print(_safe_failure(profile=config.label, code="WATCHDOG_INTERRUPTED"))
         return 130
+    except _ChildOutputLimitError:
+        if process is not None:
+            _terminate_child_safely(process)
+        print(_safe_failure(profile=config.label, code="CHILD_RESULT_INVALID"))
+        return 2
     except Exception:
         if process is not None:
-            _terminate_child(process)
+            _terminate_child_safely(process)
         print(_safe_failure(profile=config.label, code="SUPERVISOR_FAILED"))
         return 2
 
-    safe_output = _validated_child_output(
-        output,
-        return_code=process.returncode,
-        config=config,
-    )
+    try:
+        safe_output = _validated_child_output(
+            output,
+            return_code=return_code,
+            config=config,
+        )
+    except Exception:
+        safe_output = None
     if safe_output is None:
         print(_safe_failure(profile=config.label, code="CHILD_RESULT_INVALID"))
         return 2
     print(safe_output)
-    return cast(int, process.returncode)
+    return return_code
 
 
 def _child_main() -> int:
@@ -1152,7 +1398,10 @@ def _child_main() -> int:
     return main(arguments)
 
 
+def _entrypoint(arguments: list[str] | None = None) -> int:
+    selected_arguments = list(sys.argv[1:] if arguments is None else arguments)
+    return supervised_main(selected_arguments)
+
+
 if __name__ == "__main__":
-    if sys.argv[1:] == [_CHILD_MODE]:
-        raise SystemExit(_child_main())
-    raise SystemExit(supervised_main())
+    raise SystemExit(_entrypoint())

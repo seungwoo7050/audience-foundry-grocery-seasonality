@@ -1,0 +1,232 @@
+# Phase 0 배포 직전 완료 보고서
+
+검증일은 2026-08-30(KST)다. 이 보고서는 local production candidate의 증거이며 실제
+production 배포, traffic 공개나 `Phase 0 완료`를 주장하지 않는다.
+
+현재 상태는 **Phase 0 배포 직전 완료**다. 아래 결과는 local production candidate에만 적용되며
+production platform 선택, 실제 배포와 traffic 공개는 포함하지 않는다.
+
+## 1. release SHA와 Git 상태
+
+- 900초 성능 profile 실행 대상 application SHA:
+  `02f1e5c14e84757d8929da710a41e844bd94bac3`.
+- 최종 release SHA: 이 tracked 보고서를 포함하는 마지막 clean commit이므로 문서 안에서
+  자기 SHA를 참조할 수 없다. 세션 완료 응답이 `git rev-parse HEAD` exact 값을 고정한다.
+- final gate: branch `main`, remote 없음, `git status --porcelain` empty, `git fsck --full` 통과.
+- `.env.local`은 untracked·ignored 상태를 유지한다.
+
+## 2. 구현된 사용자 흐름과 비목표
+
+실제 Path A generation을 검수·승인·seal·activate한 뒤, public request가 active
+`RECENT_RETAIL` revision만 읽는 한국어 Django SSR 폐쇄 루프를 구현했다. 사용자는 채소·과일
+목록에서 공식 품목명을 검색·필터링하고 exact 품목·품종·등급·raw 단위·검증된 aggregate
+coverage 상세로 이동한다. 상세는 source 조사일의 KAMIS 소매 조사 평균과 같은 row의 1주·1개월·
+1년 제공값, 결정적 차이·퍼센트·방향, reference date unavailable, 검토일과 출처를 표시한다.
+
+desktop과 mobile은 별도 SPA 없이 같은 server-rendered responsive route를 쓴다. 네이티브 앱,
+앱스토어 배포, 계정·위치·개인화·analytics, 도매·지역 비교·1일 비교·쇼핑몰 정보·알림과 월별
+과거 패턴 module은 비목표다. 공개 문구는 구매·품질·자연적 시기·미래값 판단으로 확대하지
+않는다.
+
+## 3. 선택 source path와 권리 증거
+
+- 선택: **A — 최근 비교 MVP**.
+- owner: 한국농수산식품유통공사(aT), dataset
+  [15156063](https://www.data.go.kr/data/15156063/openapi.do).
+- endpoint: `GET https://apis.data.go.kr/B552845/recent/price`, Swagger `1.0.0`.
+- 실제 HTTPS·인증·JSON/XML UTF-8·provider success/error envelope와 5-page ordered pagination을
+  검증했다. 452행 schema를 대사했고 소매 채소 58·과일 37 중 exact 5+5를 승인 범위로 삼았다.
+- 두 획득의 ordered manifest는
+  `dd893ef82f1f1597a2b65ca6024f31fb7b62ae3f10b13c6d6185365eca2798ba`로 같았다.
+- 실제 request audit 시각(UTC)은 첫 attempt
+  `2026-08-30T04:00:36.497949Z`~`04:00:37.338969Z`, 두 번째 attempt
+  `2026-08-30T04:00:47.994140Z`~`04:00:48.696744Z`다. body·query 없는 redacted receipt와
+  hash는 [구현 계획](IMPLEMENTATION-PLAN.md#source-gate-증거)에 연결한다.
+- 기존 source configuration의 `state_changed_at`·`rights_confirmed_at`은
+  `2026-08-29T15:00:00Z`(KST 자정)라는 date-precision 값으로 남아 있어 실제 gate 관측 시각으로
+  해석할 수 없다. 정확한 live 관측 시각은 보존되지 않았으며 원본 두 값은 수정·삭제하지 않았다.
+  migration `grocery 0010`은 correction
+  `49143c27-d2dd-5fbd-b1dc-4aa3cc002fab`을 append-only로 추가한다. effective 값
+  `2026-08-30T02:23:44Z`는 증거 commit
+  `d23e5707e1fc3bf6e032d459b149b946b0451e00`의 기록 시각을 사용한 **durable gate-decision
+  recorded-at upper bound**이지 정확한 관측 시각이 아니다. DB trigger가 correction의 base·chronology를
+  검사하고 update/delete를 거부하며 bootstrap·review·inspection은 검증된 effective helper만 쓴다.
+  새 DB는 정확한 effective 값으로 생성되어 correction row가 필요 없다.
+- portal의 `이용허락범위 제한 없음`과 자유이용·상업/비상업 이용·변형 허용을 확인했다.
+  제품은 더 좁게 정규화 사실과 출처만 공개한다. raw payload 보존·재배포 문구는 명시적이지
+  않아 `HASH_ONLY`이고 raw body를 파일·Git·publication에 저장하지 않았다.
+- source configuration의 권리 locator는 공식 dataset landing이다. 저장된
+  `rights_evidence_sha256`은 동적 landing HTML이 아니라 그 페이지의 공식 첨부 명세·코드 ZIP
+  `07417ea9eb882a33615721256ff8be3b131cdb10bbc9c7b40472bf049a7e0f88`이다. landing의 권리 표시,
+  [포털 이용정책](https://www.data.go.kr/ugs/selectPortalPolicyView.do), 2026-08-30(KST) 확인 시각과
+  보수적 공개 판정을 함께 검수했고 ReviewDecision의 별도 private evidence
+  digest/commitment는
+  `2e6dcf9df27077396b8aedf8abaaf69d10bbca2f3a036d6c0127ccb1f434cca6`이다.
+- identity는 소매 `01`, 채소 `200`, 과일 `400`과 item·variety·grade·raw unit·unit size,
+  coverage `KAMIS_RETAIL_ALL_REGIONS_22_CITIES_V1`이다. coverage는 공식
+  [KAMIS 조사요령](https://www.kamis.or.kr/customer/price/knowhow/knowhow.do)의 22개 도시 조사와
+  API의 region·market field 부재를 함께 고정했다. 정확한 reference date는 제공되지 않아
+  `SOURCE_REFERENCE_DATE_UNAVAILABLE`이다.
+- quota 기간·초당 한도는 문서에 없고 실제 429 유발을 위한 소진은 하지 않았다. 수집당 최대
+  12회, timeout·size·page·bounded retry로 더 좁게 운영한다.
+
+## 4. test·migration·parser replay
+
+- final locked verification: Ruff format `111 files`, Ruff lint, mypy `97 source files`, migration
+  drift, Django system/deploy check가 모두 통과했고 pytest는 `619 passed`다. production 환경이
+  route test에 HTTPS redirect를 누출한 첫 orchestration run은 `585 passed, 12 failed`로 실패
+  처리한 뒤 test runtime을 deterministic local settings로 격리하고 전체 gate를 다시 통과했다.
+- runtime-only locked sync에서 Python `3.14.7`, Django `5.2.17`, Gunicorn `23.0.0`, psycopg
+  `3.3.4`, WhiteNoise `6.12.0`, uv `0.12.6`을 확인했다. collectstatic은 `129`개 asset과
+  `387`개 post-processed 결과를 재현했다.
+- 실제 FetchAttempt:
+  `6c4bcbeb-d47c-4648-b6ce-01988316b7dc`,
+  `4207e628-3ab9-4a12-a7ae-0cdbec67d744`.
+- SourceArtifact `70955f24-b61d-4b43-a7de-8e603f6ae459`, ParseRun
+  `0c7fad64-e49b-4c8c-9929-aece2782354d`; 452 received, 10 accepted, 442 out-of-scope.
+  두 번째 parse는 replay였고 result hash는
+  `512c65031cdfe2b734af4245d974390073999a32ad494cd9c94b33c2f165261e`다.
+- version 묶음은 parser `kamis-recent-price-v1`, schema migration `grocery 0010`, application
+  `0.1.0`, 성능 검증 application SHA `02f1e5c14e84757d8929da710a41e844bd94bac3`이다.
+- 새 빈 PostgreSQL에 Django·grocery migration `0001`~`0010`을 적용했고 drift가 없었다. 빈
+  상태는 live 200, ready/freshness 503, catalog 200으로 의도대로 실패 폐쇄했다.
+- 실제 publication backup 복원 DB는 migration inventory 28개·public table 25개와 row count,
+  audit/publication contract를 모두 대사했고 live/ready/freshness/catalog가 모두 200이었다.
+
+## 5. desktop·mobile screenshot 검수
+
+`scripts/browser_acceptance.js`가 Chromium 152에서 `360x800`, `390x844`, `768x1024`,
+`1440x900`의 실제 catalog/detail과 상태 matrix를 통과했다. 18개 full-page PNG와 hash는
+[browser evidence](../output/playwright/phase0/README.md)에 있다.
+
+모든 viewport에서 가로 overflow 없음, 최소 44px target, 읽을 수 있는 계층, 긴 한국어
+identity·단위·출처·freshness, mobile 입력·제출·validation 수정, loading·empty·unavailable·
+stale·server error, keyboard 순서·visible focus, landmark·heading·label·accessible name과
+색상 외 text 상태를 확인했다. 발견된 mobile 중복 breadcrumb와 query reflection/cache 결함은
+수정 후 재촬영했다.
+
+## 6. 접근성·성능·보안·license
+
+- axe-core 4.13.0의 실제 catalog/detail WCAG A/AA violation은 각각 0이다. decorative/gradient
+  contrast 한 incomplete 항목은 모든 실제 foreground/background와 양쪽 gradient endpoint가
+  4.5:1 이상인 별도 palette test로 보강했다. axe receipt hash는
+  `a994c5a00a9f5f75213381c5be2ef49624eb796e202d3becd0daef4818d076a6`다.
+- corrected 900초 성능 profile은 exact `9,000/9,000` 성공, catalog·list·search `6,300`, detail
+  `2,700`, error·5xx `0`, p50 `26.858 ms`, p95 `40.656 ms`, max `551.135 ms`, elapsed
+  `900.017초`, throughput `10.0 rps`, revision 단일값으로 통과했다. 고정 logical user는 구성·참여
+  모두 `20`이고 전원 round-robin이었다. 이와 별개로 실제 in-flight peak는 `5`, 상한은 `20`이었다.
+  nominal cadence `100 ms`, bounded recovery floor `90 ms`, effective deadline jitter p95
+  `5.35 ms`·max `76.784 ms`, 실제 최소 submit interval `90.028 ms`, burst `0`, `passed=true`였다.
+  `551.135 ms` max는 관측값이고 통과 gate는 end-to-end p95 `500 ms` 이하다.
+- 두 실패 run도 보존한다. 첫 진단 run은 응답 `9,000`개와 elapsed `900.056초`를 완료했지만 단일
+  scheduler stall을 뒤 요청 전체의 lag로 잘못 누적해 `passed=false`였다. 그 오판을 고친 두 번째
+  run은 응답 `9,000/9,000`, error·5xx `0`, p95 `41.716 ms`였으나 strict `100 ms` floor가 정상
+  overhead를 누적해 elapsed `947.317초`, `9.501 rps`로 실패했다. 최종 runner는 정상 `100 ms`
+  cadence를 유지하면서 stall만 요청당 최대 `10 ms`씩 회복하고 `90 ms` 미만을 burst로 거부한다.
+- security: production setting validation, secure headers/CSP, request ID, no-store HTML,
+  immutable hashed static, GET-only public SSR, default-off Admin·QA·control-plane, exact release
+  lock과 fixed non-login reviewer/publisher permission 경계를 검증했다.
+- secret gate는 `present=yes`, `ignored=yes`, `permissions=ok`, `current_match=no`,
+  `history_match=no`였고
+  key 값·길이·일부·encoding을 출력하지 않았다. `pip-audit`는 알려진 취약점 `0`, locked package
+  license inventory는 해결되지 않은 차단 항목 `0`이었다. Browser assurance 도구까지
+  `THIRD_PARTY_NOTICES.md`에 고정했다. production artifact의 bundled notices는 실제 platform
+  packaging checkpoint다.
+- Make는 ambient `KAMIS_API_KEY`를 모든 recipe child에서 unexport한다. synthetic marker를 parent
+  environment에 둔 negative test에서도 assurance child 경계는 `source_secret_environment=absent`였고
+  marker가 stdout·stderr에 반사되지 않았다.
+
+## 7. backup restore와 publication rollback
+
+- hardened local PostgreSQL 18 custom backup ID `4e74a867-fb92-42be-9e2f-4718a5a276d0`.
+- dump SHA-256 `bcf282944defefc995e7f309fb10e2b5a81fb0c8bd40b08416c86b2780ddb0a5`,
+  manifest SHA-256 `23644fec396e3310c1bd807a3b8321fec62261452323574a5a64d48d15922cf2`.
+- 남긴 local evidence 경계는 directory `0700`, dump·manifest `0600`이며 다른 rehearsal backup과
+  disposable restore DB는 제거했다.
+- 새 격리 DB restore에서 rows·28 migrations·active revision·fact-set·activation chain이 모두
+  일치했다. 이 local dump는 production 암호화 backup/PITR가 아니다.
+- hardened restore는 receipt에서 out-of-band로 보존한 위 manifest SHA-256을
+  `--expected-manifest-sha256 "$BACKUP_MANIFEST_SHA256"`로 반드시 전달하고, 고정 local Docker
+  socket에서 발견·identity-pin한 exact Compose DB container만 사용하는 것이다. target 생성 뒤
+  실패하면 같은 invocation이 만든 exact disposable target만 자동 삭제하고 부재를 확인한다.
+  `25`개 public table·`28`개 migration, row counts, publication metadata와 actual ordered payload를
+  재계산한 canonical fact-set이 모두 일치했고 restored live/ready/freshness/catalog/detail은 모두
+  `200`이었다. 잘못된 manifest receipt는 Docker preflight와 target 생성 전에 fixed code로
+  거부했고 target 부재를 확인했다.
+- publication은 v1 activate → v2 activate → v1 `ROLLBACK`을 append-only로 훈련했다. 현재
+  channel version `3`, v1 `dc6f5c83-92cc-48e7-8103-76f3fd1a668b`, 10 entries, fact-set
+  `6de8e26c22dcee4a7ce4a6e1a0640999399d126d62124cc1b1d7aefcf9aa66a9`다.
+- 승인 ReviewDecision `330cad14-2102-4dcf-a023-93a7368c7efb`는
+  `2026-08-30T04:19:49.128258Z`, 최신 ROLLBACK activation
+  `cd1f3064-2920-4395-9469-7f4b3e0b969d`는 `2026-08-30T04:20:22.343137Z`에 기록됐다.
+- application rollback rehearsal target SHA `d6d7d08c9de9a78eb597fec6e232b0e2d24a1ec1`도 최신 schema에서
+  live/ready/freshness/catalog/detail와 hashed static 200, 같은 publication hash를 확인했다.
+
+## 8. 구조화 log·health·freshness alert
+
+`grocery.audit`는 allowlist된 single-line JSON만 stdout에 내고 arbitrary message, exception,
+query, search term, body, credential·사용자 정보를 받지 않는다. valid production
+`DEPLOY_VERSION`은 event에 자동 포함되며 request correlation UUID가 응답과 log에 연결된다.
+
+`/health/live`, `/health/ready`, `/health/freshness`는 bounded no-store JSON이다. 현재 실제
+candidate는 모두 200이고 freshness는 `CURRENT`다. active artifact의 마지막 source 확인은
+`2026-08-30T04:00:48.696744Z`이며 36시간 경계는
+`2026-08-31T16:00:48.696744Z`(`2026-09-01 01:00:48 KST`)다. 이 시각 전에도 newer
+content·실패 attempt가 있으면 즉시 stale로 바뀐다. stale·unavailable, DB/migration/publication
+오류, fetch·parse failure는 fixed message code와 non-zero exit로 구분한다. production
+notification route, retention, on-call 담당자, ingress access-log privacy와 backup failure alert는
+platform 선택 뒤 실제 검증해야 한다.
+
+## 9. 실제 배포에 필요한 것
+
+- Python 3.14.7·Django 5.2.17·uv 0.12.6와 PostgreSQL 18.6 호환 platform
+- private managed PostgreSQL, TLS hostname/CA 검증, application·migration·ingestion·reviewer·
+  publisher·backup 역할별 credential/grant
+- managed `DJANGO_SECRET_KEY`, ingestion worker 전용 `KAMIS_API_KEY`, rotation·revocation 절차
+- outbound HTTPS allowlist를 가진 singleton ingestion scheduler, 24시간 cadence, overlap 방지와
+  fixed failure/freshness alert route
+- 승인 domain·DNS·certificate, exact host/CSRF, HSTS subdomain/preload 판단과 trusted proxy 계약
+- external MFA/IAM private operation job, actor provisioning과 첫 production publication 승인
+- encrypted scheduled backup, PITR, retention, restore rehearsal, RPO 24h/RTO 4h evidence
+- health probe, alert route/on-call, log 수집·보존과 query/IP/User-Agent 제거
+
+## 10. deploy·rollback 절차와 사람 작업
+
+아래 순서는 clean `RELEASE_SHA`에서 locked dependency, forward migration, static과 process를
+platform과 무관하게 재현하는 요약이다. authoritative 순서와 environment wrapper는
+[운영 런북](OPERATIONS-RUNBOOK.md)에 있으며 local candidate에서는 synthetic/local assurance
+설정으로 이를 검증한다. production에서는 그 런북의 승인된 environment와 역할별 credential을
+managed injection한 process에서 실행한다.
+
+```sh
+make runtime-sync
+.venv/bin/python manage.py makemigrations --check --dry-run
+.venv/bin/python manage.py showmigrations --plan
+.venv/bin/python manage.py migrate --plan
+.venv/bin/python manage.py check
+.venv/bin/python manage.py collectstatic --noinput
+.venv/bin/python manage.py migrate --noinput
+.venv/bin/python manage.py migrate --check
+.venv/bin/python manage.py check --deploy --fail-level WARNING
+exec .venv/bin/gunicorn config.wsgi:application \
+  --bind "$GUNICORN_BIND" --workers "$GUNICORN_WORKERS" --threads "$GUNICORN_THREADS"
+```
+
+새 release를 traffic 없이 시작해 live→ready→freshness→catalog/detail→hashed static을 검사한 뒤
+사람이 atomic traffic switch를 실행한다. application rollback은 DB·publication을 그대로 두고
+local rehearsal에서 검증한 `PREVIOUS_RELEASE_SHA`
+`d6d7d08c9de9a78eb597fec6e232b0e2d24a1ec1`와 그 static으로 code를 되돌린다. reverse migration은
+하지 않는다. 이 SHA는 local 호환성 evidence이며 vendor traffic rollback 승인이 아니다.
+publication rollback은 먼저 `inspect_recent_publication`을 실행한 뒤 external-MFA
+publisher job에서 `transition_recent_publication --operation ROLLBACK`과 exact expected state·
+release SHA를 사용한다. DB 복구는 in-place overwrite가 아니라 managed PITR의 새 instance를
+검증한 뒤 connection을 전환한다.
+
+production platform 선택 뒤 artifact 포맷·bundled notice, upload/release, atomic traffic switch와
+application rollback의 exact vendor CLI·account·application scope를 별도로 승인하기 전에는
+배포하지 않는다.
+
+남은 사람 전용 작업은 platform·database·secret store·role/IAM·domain/DNS 선택, production
+backup/PITR·alert 검증, vendor deploy/traffic/rollback 명령 확정과 실제 배포다.
+추가 API key·로그인·약관·결제, 고정 제품 결정 변경과 destructive migration이 필요해져도
+자동 진행하지 않고 별도 사람 승인에서 멈춘다.

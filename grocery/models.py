@@ -3,10 +3,12 @@ import json
 import re
 import uuid
 from collections.abc import Sequence
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from django.core.exceptions import ValidationError
-from django.core.validators import RegexValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models, transaction
 from django.db.models import F, Q
 from django.utils import timezone
@@ -985,6 +987,132 @@ class PriceSeriesKey(models.Model):
                 "semantic identity."
             )
         return series
+
+
+class RetailPriceSnapshot(models.Model):
+    """Immutable current price from one validated recent-source parse generation."""
+
+    class Currency(models.TextChoices):
+        KRW = "KRW", "South Korean won"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    parse_run = models.ForeignKey(
+        ParseRun,
+        on_delete=models.PROTECT,
+        related_name="retail_price_snapshots",
+    )
+    series = models.ForeignKey(
+        PriceSeriesKey,
+        on_delete=models.PROTECT,
+        related_name="retail_price_snapshots",
+    )
+    source_effective_date = models.DateField()
+    source_recorded_at = models.DateTimeField(null=True, blank=True)
+    current_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=0,
+        validators=[MinValueValidator(Decimal("1"))],
+    )
+    currency = models.CharField(
+        max_length=3,
+        choices=Currency.choices,
+        default=Currency.KRW,
+    )
+    source_row_sha256 = models.CharField(max_length=64, validators=[sha256_validator])
+    source_contract_revision = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=("parse_run", "series", "source_effective_date"),
+                name="grocery_snapshot_run_series_date_uniq",
+            ),
+            models.UniqueConstraint(
+                fields=("parse_run", "series"),
+                name="grocery_snapshot_run_series_uniq",
+            ),
+            models.CheckConstraint(
+                condition=Q(current_price__gt=0),
+                name="grocery_snapshot_price_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(currency="KRW"),
+                name="grocery_snapshot_currency_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(source_row_sha256__regex=SHA256_PATTERN),
+                name="grocery_snapshot_row_hash_valid",
+            ),
+            models.CheckConstraint(
+                condition=~Q(source_contract_revision=""),
+                name="grocery_snapshot_contract_nonempty",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.parse_run_id}:{self.series_id}:{self.source_effective_date}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ValidationError("Retail price snapshots are immutable.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        raise ValidationError("Retail price snapshots are immutable.")
+
+    def clean(self) -> None:
+        super().clean()
+        if self.parse_run_id and self.parse_run.status != ParseRun.Status.VALIDATED:
+            raise ValidationError(
+                {"parse_run": "Retail price snapshots require a validated parse run."}
+            )
+
+    @classmethod
+    @transaction.atomic
+    def get_or_validate(
+        cls,
+        *,
+        parse_run_id: uuid.UUID,
+        series_id: uuid.UUID,
+        source_effective_date: date,
+        source_recorded_at: datetime | None,
+        current_price: Decimal,
+        source_row_sha256: str,
+        source_contract_revision: str,
+    ) -> RetailPriceSnapshot:
+        parse_run = ParseRun.objects.select_for_update().get(pk=parse_run_id)
+        series = PriceSeriesKey.objects.select_for_update().get(pk=series_id)
+        if parse_run.status != ParseRun.Status.VALIDATED:
+            raise ValidationError("Retail price snapshots require a validated parse run.")
+
+        semantic_fields: dict[str, object] = {
+            "source_effective_date": source_effective_date,
+            "source_recorded_at": source_recorded_at,
+            "current_price": current_price,
+            "currency": cls.Currency.KRW,
+            "source_row_sha256": source_row_sha256,
+            "source_contract_revision": source_contract_revision,
+        }
+        candidate = cls(parse_run=parse_run, series=series, **semantic_fields)
+        candidate.full_clean(validate_unique=False, validate_constraints=False)
+
+        existing = (
+            cls.objects.select_for_update().filter(parse_run=parse_run, series=series).first()
+        )
+        if existing is not None:
+            if any(
+                getattr(existing, field_name) != value
+                for field_name, value in semantic_fields.items()
+            ):
+                raise ValidationError(
+                    "Retail price snapshot replay conflicts with the existing generation series."
+                )
+            return existing
+
+        candidate.save()
+        return candidate
 
 
 def ordered_page_manifest_sha256(receipts: Sequence[PageReceipt]) -> str:

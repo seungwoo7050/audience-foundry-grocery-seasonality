@@ -41,6 +41,9 @@ HTTP_5XX_RATE_LIMIT: Final = 0.005
 P95_SCHEDULE_JITTER_LIMIT_MS: Final = 100.0
 PROFILE_COMPLETION_GRACE_SECONDS: Final = 3.0
 NOMINAL_REQUEST_INTERVAL_MS: Final = 1000.0 / REQUESTS_PER_SECOND
+# Recover scheduler stalls by at most 10 ms per request; never submit less than
+# 90 ms after the prior actual submission.
+RECOVERY_FLOOR_INTERVAL_MS: Final = 90.0
 _CLOCK_COMPARISON_EPSILON_MS: Final = 0.001
 
 _LOCAL_HOST: Final = "127.0.0.1"
@@ -221,6 +224,7 @@ class LoadReport:
                 "schedule_jitter_contract_met": self.schedule_jitter_contract_met,
                 "minimum_inter_submission_ms": self.minimum_inter_submission_ms,
                 "nominal_request_interval_ms": NOMINAL_REQUEST_INTERVAL_MS,
+                "recovery_floor_interval_ms": RECOVERY_FLOOR_INTERVAL_MS,
                 "burst_interval_violations": self.burst_interval_violations,
                 "no_burst_contract_met": self.no_burst_contract_met,
                 "schedule_contract_met": self.schedule_contract_met,
@@ -509,7 +513,7 @@ def build_report(
     no_burst_contract_met = bool(
         measurements.burst_interval_violations == 0
         and measurements.minimum_inter_submission_ms + _CLOCK_COMPARISON_EPSILON_MS
-        >= NOMINAL_REQUEST_INTERVAL_MS
+        >= RECOVERY_FLOOR_INTERVAL_MS
     )
     schedule_contract_met = schedule_jitter_contract_met and no_burst_contract_met
     concurrency_contract_met = bool(1 <= measurements.observed_peak_active <= MAX_CONCURRENCY)
@@ -578,7 +582,7 @@ def run_profile(
     executor_factory: Callable[[int], Executor] = ThreadPoolExecutor,
 ) -> LoadReport:
     started_at = monotonic()
-    interval_seconds = 1.0 / REQUESTS_PER_SECOND
+    recovery_floor_seconds = RECOVERY_FLOOR_INTERVAL_MS / 1000.0
     previous_submission_at: float | None = None
     inter_submission_ms: list[float] = []
     active_counter = _ActiveRequestCounter()
@@ -590,7 +594,7 @@ def run_profile(
             if previous_submission_at is not None:
                 paced_deadline = max(
                     paced_deadline,
-                    previous_submission_at + interval_seconds,
+                    previous_submission_at + recovery_floor_seconds,
                 )
             _sleep_until(paced_deadline, monotonic=monotonic, sleeper=sleeper)
             submitted_at = monotonic()
@@ -648,7 +652,7 @@ def run_profile(
         max_schedule_jitter_ms=max(schedule_jitter_ms, default=0.0),
         minimum_inter_submission_ms=minimum_inter_submission_ms,
         burst_interval_violations=sum(
-            interval_ms + _CLOCK_COMPARISON_EPSILON_MS < NOMINAL_REQUEST_INTERVAL_MS
+            interval_ms + _CLOCK_COMPARISON_EPSILON_MS < RECOVERY_FLOOR_INTERVAL_MS
             for interval_ms in inter_submission_ms
         ),
         observed_peak_active=active_counter.peak,

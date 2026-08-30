@@ -25,6 +25,7 @@ from scripts.http_load_profile import (
     P95_SCHEDULE_JITTER_LIMIT_MS,
     PHASE0_DURATION_SECONDS,
     PROFILE_COMPLETION_GRACE_SECONDS,
+    RECOVERY_FLOOR_INTERVAL_MS,
     REQUESTS_PER_SECOND,
     CompletedRequest,
     HttpObservation,
@@ -192,6 +193,7 @@ def test_phase0_defaults_are_exact_and_smoke_is_explicitly_non_acceptance() -> N
     assert REQUESTS_PER_SECOND == 10
     assert MAX_CONCURRENCY == 20
     assert NOMINAL_REQUEST_INTERVAL_MS == 100.0
+    assert RECOVERY_FLOOR_INTERVAL_MS == 90.0
     assert P95_SCHEDULE_JITTER_LIMIT_MS == 100.0
     assert PROFILE_COMPLETION_GRACE_SECONDS == 3.0
     assert phase0.label == "PHASE0_900S"
@@ -277,6 +279,10 @@ def test_smoke_runner_paces_ten_requests_and_emits_no_request_or_revision_values
     assert report.revision_consistent is True
     assert report.passed is True
     assert clock.value == 1.0
+    timing = report.data()["timing"]
+    assert isinstance(timing, dict)
+    assert timing["nominal_request_interval_ms"] == 100.0
+    assert timing["recovery_floor_interval_ms"] == 90.0
     receipt = report.render()
     assert str(_DETAIL_ID) not in receipt
     assert _REVISION_TOKEN not in receipt
@@ -312,6 +318,32 @@ def test_phase0_runner_executes_exact_900_second_ten_rps_seventy_thirty_plan() -
     assert report.passed is True
 
 
+def test_phase0_elapsed_and_throughput_boundary_is_exactly_nine_hundred_to_nine_oh_three() -> None:
+    config = LoadProfileConfig(port=8123, detail_id=_DETAIL_ID)
+    requests = completed_requests([observation() for _index in range(9_000)])
+
+    at_boundary = build_report(
+        config,
+        requests,
+        measurements=run_measurements(elapsed_seconds=903.0),
+    )
+    beyond_boundary = build_report(
+        config,
+        requests,
+        measurements=run_measurements(elapsed_seconds=903.001),
+    )
+
+    assert at_boundary.elapsed_seconds == 903.0
+    assert at_boundary.throughput_rps == round(9_000 / 903, 3)
+    assert at_boundary.minimum_accepted_throughput_rps == round(9_000 / 903, 3)
+    assert at_boundary.duration_contract_met is True
+    assert at_boundary.throughput_target_met is True
+    assert at_boundary.passed is True
+    assert beyond_boundary.duration_contract_met is False
+    assert beyond_boundary.throughput_target_met is False
+    assert beyond_boundary.passed is False
+
+
 def test_end_to_end_latency_includes_schedule_queue_delay_through_completion() -> None:
     clock = FakeClock()
     clock.value = 0.3
@@ -336,7 +368,7 @@ def test_end_to_end_latency_includes_schedule_queue_delay_through_completion() -
     assert active_counter.peak == 1
 
 
-def test_one_scheduler_stall_is_not_repeated_and_never_creates_a_catch_up_burst() -> None:
+def test_one_scheduler_stall_recovers_gradually_without_a_catch_up_burst() -> None:
     config = LoadProfileConfig(port=8123, detail_id=_DETAIL_ID)
     clock = OversleepOnceClock()
     request_started_at: list[float] = []
@@ -356,12 +388,17 @@ def test_one_scheduler_stall_is_not_repeated_and_never_creates_a_catch_up_burst(
     assert len(request_started_at) == 9_000
     assert request_started_at[1] == pytest.approx(0.3)
     assert all(
-        later - earlier == pytest.approx(0.1) for earlier, later in pairwise(request_started_at[1:])
+        later - earlier == pytest.approx(0.09)
+        for earlier, later in pairwise(request_started_at[1:22])
     )
-    assert report.elapsed_seconds == pytest.approx(900.1)
+    assert all(
+        later - earlier == pytest.approx(0.1)
+        for earlier, later in pairwise(request_started_at[21:])
+    )
+    assert report.elapsed_seconds == pytest.approx(900.0)
     assert report.max_schedule_jitter_ms == pytest.approx(200.0)
     assert report.p95_schedule_jitter_ms == 0.0
-    assert report.minimum_inter_submission_ms == pytest.approx(100.0)
+    assert report.minimum_inter_submission_ms == pytest.approx(90.0)
     assert report.burst_interval_violations == 0
     assert report.schedule_jitter_contract_met is True
     assert report.no_burst_contract_met is True
@@ -387,7 +424,7 @@ def test_small_repeated_clock_jitter_preserves_inter_submission_rate() -> None:
     )
 
     assert report.p95_schedule_jitter_ms == pytest.approx(2.0)
-    assert report.minimum_inter_submission_ms == pytest.approx(102.0)
+    assert report.minimum_inter_submission_ms == pytest.approx(100.0)
     assert report.burst_interval_violations == 0
     assert report.no_burst_contract_met is True
     assert report.passed is True
@@ -504,7 +541,7 @@ def test_report_rejects_persistent_schedule_jitter_or_catch_up_burst(failure: st
     else:
         measurements = run_measurements(
             elapsed_seconds=1.0,
-            minimum_inter_submission_ms=99.0,
+            minimum_inter_submission_ms=RECOVERY_FLOOR_INTERVAL_MS - 0.001,
             burst_interval_violations=1,
         )
 

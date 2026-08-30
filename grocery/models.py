@@ -10,7 +10,7 @@ from typing import Any
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.validators import MinValueValidator, RegexValidator
-from django.db import models, transaction
+from django.db import connection, models, transaction
 from django.db.models import F, Q
 from django.utils import timezone
 
@@ -1979,6 +1979,314 @@ class PublicationEntry(models.Model):
             raise ValidationError("Publication entries can only be added before sealing.")
         if self.snapshot.parse_run_id != self.revision.generation_id:
             raise ValidationError("Publication entries must belong to the revision generation.")
+
+
+class PublicationChannel(models.Model):
+    """The guarded current pointer for the one approved recent-retail channel."""
+
+    channel = models.CharField(
+        primary_key=True,
+        max_length=32,
+        choices=PublicationRevision.Channel.choices,
+        default=PublicationRevision.Channel.RECENT_RETAIL,
+        editable=False,
+    )
+    current_revision = models.ForeignKey(
+        PublicationRevision,
+        on_delete=models.PROTECT,
+        related_name="current_for_channels",
+        null=True,
+        blank=True,
+    )
+    version = models.PositiveBigIntegerField(default=0, editable=False)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(channel="RECENT_RETAIL"),
+                name="grocery_publication_pointer_channel_valid",
+            ),
+            models.CheckConstraint(
+                condition=(Q(version=0, current_revision__isnull=True) | Q(version__gt=0)),
+                name="grocery_publication_pointer_initial_valid",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.channel}:{self.version}:{self.current_revision_id or 'WITHDRAWN'}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        raise ValidationError(
+            "Publication channels can only be changed by the publication transition service."
+        )
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        raise ValidationError("Publication channels cannot be deleted.")
+
+
+class PublicationActivation(models.Model):
+    """Append-only evidence for one atomic recent-retail pointer transition."""
+
+    class Operation(models.TextChoices):
+        ACTIVATE = "ACTIVATE", "Activate"
+        ROLLBACK = "ROLLBACK", "Rollback"
+        WITHDRAW = "WITHDRAW", "Withdraw"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    channel = models.ForeignKey(
+        PublicationChannel,
+        on_delete=models.PROTECT,
+        related_name="activations",
+    )
+    operation = models.CharField(max_length=16, choices=Operation.choices)
+    sequence = models.PositiveBigIntegerField(validators=[MinValueValidator(1)])
+    previous_revision = models.ForeignKey(
+        PublicationRevision,
+        on_delete=models.PROTECT,
+        related_name="previous_publication_activations",
+        null=True,
+        blank=True,
+    )
+    target_revision = models.ForeignKey(
+        PublicationRevision,
+        on_delete=models.PROTECT,
+        related_name="target_publication_activations",
+        null=True,
+        blank=True,
+    )
+    publisher = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="grocery_publication_activations",
+    )
+    reason_code = models.CharField(
+        max_length=64,
+        validators=[RegexValidator(r"^[A-Z][A-Z0-9_]*$")],
+    )
+    acceptance_evidence_sha256 = models.CharField(
+        max_length=64,
+        validators=[sha256_validator],
+    )
+    created_at = models.DateTimeField(default=timezone.now, editable=False)
+
+    _transition_write = False
+
+    class Meta:
+        permissions = [
+            ("publish_publication", "Can transition a grocery publication"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(channel_id="RECENT_RETAIL"),
+                name="grocery_activation_channel_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(operation__in=("ACTIVATE", "ROLLBACK", "WITHDRAW")),
+                name="grocery_activation_operation_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(sequence__gt=0),
+                name="grocery_activation_sequence_positive",
+            ),
+            models.CheckConstraint(
+                condition=Q(reason_code__regex=r"^[A-Z][A-Z0-9_]*$"),
+                name="grocery_activation_reason_code_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(acceptance_evidence_sha256__regex=SHA256_PATTERN),
+                name="grocery_activation_evidence_hash_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(operation__in=("ACTIVATE", "ROLLBACK"), target_revision__isnull=False)
+                    | Q(operation="WITHDRAW", target_revision__isnull=True)
+                ),
+                name="grocery_activation_target_shape_valid",
+            ),
+            models.UniqueConstraint(
+                fields=("channel", "sequence"),
+                name="grocery_activation_channel_sequence_uniq",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.channel_id}:{self.sequence}:{self.operation}:{self.id}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ValidationError("Publication activations are append-only.")
+        if not self._transition_write:
+            raise ValidationError(
+                "Publication activations can only be added by the transition service."
+            )
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        raise ValidationError("Publication activations are append-only.")
+
+
+def _set_publication_transition_token(operation_id: uuid.UUID | None) -> None:
+    token = "" if operation_id is None else str(operation_id)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT set_config('grocery.publication_transition_id', %s, true)",
+            [token],
+        )
+
+
+def _bootstrap_recent_publication_channel(operation_id: uuid.UUID) -> None:
+    _set_publication_transition_token(operation_id)
+    PublicationChannel.objects.bulk_create(
+        [
+            PublicationChannel(
+                channel=PublicationRevision.Channel.RECENT_RETAIL,
+                current_revision_id=None,
+                version=0,
+            )
+        ],
+        ignore_conflicts=True,
+    )
+
+
+def _update_recent_publication_pointer(
+    *,
+    expected_current_revision_id: uuid.UUID | None,
+    expected_version: int,
+    target_revision_id: uuid.UUID | None,
+) -> int:
+    return PublicationChannel.objects.filter(
+        pk=PublicationRevision.Channel.RECENT_RETAIL,
+        current_revision_id=expected_current_revision_id,
+        version=expected_version,
+    ).update(
+        current_revision_id=target_revision_id,
+        version=expected_version + 1,
+    )
+
+
+@transaction.atomic
+def transition_recent_publication(
+    *,
+    operation_id: uuid.UUID,
+    actor: Any,
+    operation: str,
+    target_revision_id: uuid.UUID | None,
+    expected_current_revision_id: uuid.UUID | None,
+    expected_version: int,
+    reason_code: str,
+    acceptance_evidence_sha256: str,
+) -> tuple[PublicationActivation, bool]:
+    """Append one authorized event and atomically advance the fixed current pointer."""
+
+    has_permission = getattr(actor, "has_perm", None)
+    if (
+        getattr(actor, "pk", None) is None
+        or not bool(getattr(actor, "is_authenticated", False))
+        or not bool(getattr(actor, "is_active", False))
+        or not callable(has_permission)
+        or not has_permission("grocery.publish_publication")
+    ):
+        raise PermissionDenied(
+            "An active publisher with publish_publication permission is required."
+        )
+    if type(operation_id) is not uuid.UUID:
+        raise ValidationError("Publication operation ID must be a UUID.")
+    if type(expected_version) is not int or expected_version < 0:
+        raise ValidationError("Expected publication version must be a non-negative integer.")
+
+    _bootstrap_recent_publication_channel(operation_id)
+    channel = PublicationChannel.objects.select_for_update().get(
+        pk=PublicationRevision.Channel.RECENT_RETAIL
+    )
+
+    semantic_fields: dict[str, object] = {
+        "channel_id": PublicationRevision.Channel.RECENT_RETAIL,
+        "operation": operation,
+        "sequence": expected_version + 1,
+        "previous_revision_id": expected_current_revision_id,
+        "target_revision_id": target_revision_id,
+        "publisher_id": actor.pk,
+        "reason_code": reason_code,
+        "acceptance_evidence_sha256": acceptance_evidence_sha256,
+    }
+    existing = PublicationActivation.objects.select_for_update().filter(pk=operation_id).first()
+    if existing is not None:
+        if any(
+            getattr(existing, field_name) != field_value
+            for field_name, field_value in semantic_fields.items()
+        ):
+            raise ValidationError("Publication operation UUID conflicts with stored evidence.")
+        _set_publication_transition_token(None)
+        return existing, False
+
+    if (
+        channel.version != expected_version
+        or channel.current_revision_id != expected_current_revision_id
+    ):
+        raise ValidationError("Publication expectation is stale.")
+    if operation not in PublicationActivation.Operation.values:
+        raise ValidationError("Publication operation is invalid.")
+    if operation == PublicationActivation.Operation.WITHDRAW:
+        if target_revision_id is not None or channel.current_revision_id is None:
+            raise ValidationError("Withdrawal requires one current revision and no target.")
+        target_revision = None
+    else:
+        if target_revision_id is None or target_revision_id == channel.current_revision_id:
+            raise ValidationError("Publication transition requires a different target revision.")
+        target_revision = (
+            PublicationRevision.objects.select_for_update()
+            .select_related("review_decision")
+            .filter(pk=target_revision_id)
+            .first()
+        )
+        if (
+            target_revision is None
+            or target_revision.channel != PublicationRevision.Channel.RECENT_RETAIL
+            or target_revision.sealed_at is None
+            or target_revision.review_decision.decision != ReviewDecision.Decision.APPROVE
+            or ReviewDecision.objects.filter(
+                supersedes_id=target_revision.review_decision_id
+            ).exists()
+        ):
+            raise ValidationError("Publication target must be a sealed approved revision.")
+        if (
+            operation == PublicationActivation.Operation.ROLLBACK
+            and not PublicationActivation.objects.filter(
+                channel=channel,
+                sequence__lte=expected_version,
+                operation__in=(
+                    PublicationActivation.Operation.ACTIVATE,
+                    PublicationActivation.Operation.ROLLBACK,
+                ),
+                target_revision_id=target_revision.id,
+            ).exists()
+        ):
+            raise ValidationError("Rollback target was not a previously current revision.")
+
+    activation = PublicationActivation(
+        id=operation_id,
+        channel=channel,
+        operation=operation,
+        sequence=expected_version + 1,
+        previous_revision_id=expected_current_revision_id,
+        target_revision=target_revision,
+        publisher_id=actor.pk,
+        reason_code=reason_code,
+        acceptance_evidence_sha256=acceptance_evidence_sha256,
+    )
+    activation._transition_write = True
+    activation.save()
+    updated = _update_recent_publication_pointer(
+        expected_current_revision_id=expected_current_revision_id,
+        expected_version=expected_version,
+        target_revision_id=target_revision_id,
+    )
+    if updated != 1:
+        raise ValidationError("Publication pointer transition did not affect exactly one channel.")
+    _set_publication_transition_token(None)
+    activation.refresh_from_db()
+    return activation, True
 
 
 @transaction.atomic

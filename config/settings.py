@@ -1,6 +1,9 @@
 import os
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlparse
+
+from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -46,6 +49,51 @@ ADMIN_ENABLED = env_bool("ADMIN_ENABLED", DEBUG)
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "local-development-only-not-for-production")
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "")
+
+
+def validate_production_environment(
+    environment: Mapping[str, str],
+    *,
+    debug: bool,
+    admin_enabled: bool,
+    secret_key: str,
+    allowed_hosts: Sequence[str],
+    csrf_trusted_origins: Sequence[str],
+) -> None:
+    """Reject incomplete production settings without reflecting any supplied value."""
+
+    if debug:
+        return
+    if "DJANGO_SECRET_KEY" not in environment or len(secret_key) < 50:
+        raise ImproperlyConfigured("production_secret_key_required")
+    if "DJANGO_ALLOWED_HOSTS" not in environment or not allowed_hosts or "*" in allowed_hosts:
+        raise ImproperlyConfigured("production_allowed_hosts_required")
+    if "DJANGO_CSRF_TRUSTED_ORIGINS" not in environment or not csrf_trusted_origins:
+        raise ImproperlyConfigured("production_csrf_origins_required")
+    for origin in csrf_trusted_origins:
+        parsed_origin = urlparse(origin)
+        if (
+            parsed_origin.scheme != "https"
+            or not parsed_origin.hostname
+            or parsed_origin.username is not None
+            or parsed_origin.password is not None
+            or parsed_origin.query
+            or parsed_origin.fragment
+            or parsed_origin.path not in ("", "/")
+        ):
+            raise ImproperlyConfigured("production_csrf_origin_invalid")
+    if admin_enabled:
+        raise ImproperlyConfigured("production_admin_strong_auth_not_configured")
+
+
+validate_production_environment(
+    os.environ,
+    debug=DEBUG,
+    admin_enabled=ADMIN_ENABLED,
+    secret_key=SECRET_KEY,
+    allowed_hosts=ALLOWED_HOSTS,
+    csrf_trusted_origins=CSRF_TRUSTED_ORIGINS,
+)
 
 INSTALLED_APPS = [
     "django.contrib.admin",

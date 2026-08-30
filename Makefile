@@ -6,7 +6,7 @@ PYTHON := .venv/bin/python
 # DATABASE_URL, and the exact 40-character lowercase release DEPLOY_VERSION.
 # Its secret-check reads the ignored owner-only .env.local in-process; do not export
 # KAMIS_API_KEY into Make, a command argument, or a child-process environment.
-.PHONY: check db-up dependency-audit format-check license-inventory lint migrate migration-check production-check production-env-check secret-check serve sync test type
+.PHONY: check db-up dependency-audit format-check license-inventory lint local-release-db-check migrate migration-check production-check production-env-check secret-check serve sync test type
 
 sync:
 	$(UV_RUN) sync --frozen
@@ -51,8 +51,11 @@ production-env-check:
 	@test "$${#DEPLOY_VERSION}" -eq 40 || { echo "production_check=failed code=release_sha_required"; exit 2; }
 	@case "$${DEPLOY_VERSION}" in *[!0-9a-f]*) echo "production_check=failed code=release_sha_required"; exit 2;; esac
 
-production-check: production-env-check check secret-check dependency-audit license-inventory
-	$(PYTHON) manage.py check --deploy
+local-release-db-check:
+	$(PYTHON) -m scripts.local_release_database_check
+
+production-check: production-env-check local-release-db-check check secret-check dependency-audit license-inventory
+	$(PYTHON) manage.py check --deploy --fail-level WARNING
 
 serve:
 	.venv/bin/gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 2 --threads 4

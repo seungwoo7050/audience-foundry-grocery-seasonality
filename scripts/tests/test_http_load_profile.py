@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import io
 import json
+import signal
+import subprocess
 import threading
 import time
 import uuid
@@ -17,6 +19,8 @@ from urllib.parse import urlsplit
 import pytest
 
 from scripts.http_load_profile import (
+    CLI_TERMINATION_GRACE_SECONDS,
+    CLI_WATCHDOG_GRACE_SECONDS,
     HTTP_5XX_RATE_LIMIT,
     LOGICAL_VIRTUAL_USERS,
     MAX_CONCURRENCY,
@@ -42,6 +46,7 @@ from scripts.http_load_profile import (
     main,
     request_plan,
     run_profile,
+    supervised_main,
 )
 
 _DETAIL_ID = uuid.UUID("018f47d2-f9b2-7cc4-8ddf-fce39c000001")
@@ -225,6 +230,8 @@ def test_phase0_defaults_are_exact_and_smoke_is_explicitly_non_acceptance() -> N
     assert RECOVERY_FLOOR_INTERVAL_MS == 90.0
     assert P95_SCHEDULE_JITTER_LIMIT_MS == 100.0
     assert PROFILE_COMPLETION_GRACE_SECONDS == 3.0
+    assert CLI_WATCHDOG_GRACE_SECONDS == 5.0
+    assert CLI_TERMINATION_GRACE_SECONDS == 1.0
     assert phase0.label == "PHASE0_900S"
     assert smoke.label == "SMOKE_NON_ACCEPTANCE"
     with pytest.raises(LoadProfileError):
@@ -870,3 +877,181 @@ def test_main_prints_only_safe_json_and_uses_report_exit_status(
         "profile": "UNAVAILABLE",
     }
     assert private_argument not in invalid_output
+
+
+def test_supervised_cli_reprints_only_a_validated_child_receipt(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config = LoadProfileConfig(
+        port=8000,
+        detail_id=_DETAIL_ID,
+        profile="smoke",
+        duration_seconds=1,
+    )
+    arguments = [
+        "--port",
+        "8000",
+        "--detail-id",
+        str(_DETAIL_ID),
+        "--profile",
+        "smoke",
+        "--duration-seconds",
+        "1",
+    ]
+    report = build_report(
+        config,
+        completed_requests([observation() for _index in range(10)]),
+        measurements=run_measurements(elapsed_seconds=1.0),
+    )
+    child = MagicMock()
+    child.communicate.return_value = (f"{report.render()}\n", None)
+    child.returncode = 0
+
+    with patch("scripts.http_load_profile.subprocess.Popen", return_value=child) as popen:
+        exit_code = supervised_main(arguments)
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert output.count("\n") == 1
+    assert json.loads(output) == report.data()
+    assert str(_DETAIL_ID) not in output
+    assert _REVISION_TOKEN not in output
+    command = popen.call_args.args[0]
+    assert str(_DETAIL_ID) not in " ".join(command)
+    assert popen.call_args.kwargs["stderr"] is subprocess.DEVNULL
+    assert popen.call_args.kwargs["start_new_session"] is True
+    assert set(popen.call_args.kwargs["env"]) == {
+        "PYTHONIOENCODING",
+        "PYTHONUNBUFFERED",
+        "PYTHONUTF8",
+    }
+    assert child.communicate.call_args.kwargs["timeout"] == pytest.approx(
+        1.0 + CLI_WATCHDOG_GRACE_SECONDS
+    )
+
+
+def test_supervised_cli_kills_stubborn_child_and_redacts_timeout_details(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    arguments = [
+        "--port",
+        "8000",
+        "--detail-id",
+        str(_DETAIL_ID),
+        "--profile",
+        "smoke",
+        "--duration-seconds",
+        "1",
+    ]
+    private_output = f"private={_DETAIL_ID};revision={_REVISION_TOKEN}"
+    child = MagicMock()
+    child.pid = 4_321
+    child.returncode = None
+    child.poll.return_value = None
+    child.communicate.side_effect = (
+        subprocess.TimeoutExpired(
+            cmd=("private-command", str(_DETAIL_ID)),
+            timeout=1.0 + CLI_WATCHDOG_GRACE_SECONDS,
+            output=private_output,
+        ),
+        subprocess.TimeoutExpired(
+            cmd="private-command",
+            timeout=CLI_TERMINATION_GRACE_SECONDS,
+            output=private_output,
+        ),
+        (private_output, None),
+    )
+
+    with (
+        patch("scripts.http_load_profile.subprocess.Popen", return_value=child),
+        patch("scripts.http_load_profile.os.killpg") as kill_process_group,
+    ):
+        exit_code = supervised_main(arguments)
+
+    output = capsys.readouterr().out
+    assert exit_code == 2
+    assert json.loads(output) == {
+        "error": "WATCHDOG_TIMEOUT",
+        "passed": False,
+        "profile": "SMOKE_NON_ACCEPTANCE",
+    }
+    assert output.count("\n") == 1
+    assert str(_DETAIL_ID) not in output
+    assert _REVISION_TOKEN not in output
+    assert "private-command" not in output
+    assert kill_process_group.call_args_list == [
+        ((4_321, signal.SIGTERM),),
+        ((4_321, signal.SIGKILL),),
+    ]
+
+
+def test_supervised_cli_redacts_process_creation_failure(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    arguments = [
+        "--port",
+        "8000",
+        "--detail-id",
+        str(_DETAIL_ID),
+        "--profile",
+        "smoke",
+        "--duration-seconds",
+        "1",
+    ]
+    private_error = OSError(f"failed argument {str(_DETAIL_ID)} {_REVISION_TOKEN}")
+
+    with patch("scripts.http_load_profile.subprocess.Popen", side_effect=private_error):
+        exit_code = supervised_main(arguments)
+
+    output = capsys.readouterr().out
+    assert exit_code == 2
+    assert json.loads(output) == {
+        "error": "SUPERVISOR_FAILED",
+        "passed": False,
+        "profile": "SMOKE_NON_ACCEPTANCE",
+    }
+    assert output.count("\n") == 1
+    assert str(_DETAIL_ID) not in output
+    assert _REVISION_TOKEN not in output
+
+
+@pytest.mark.parametrize(
+    "child_output",
+    (
+        '{"passed":true,"private":"http://127.0.0.1:8000/?token=value"}\n',
+        '{}\n{"detail_id":"018f47d2-f9b2-7cc4-8ddf-fce39c000001"}\n',
+        "민감한 오류\n",
+    ),
+)
+def test_supervised_cli_rejects_unvalidated_child_output_without_reflection(
+    child_output: str,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    arguments = [
+        "--port",
+        "8000",
+        "--detail-id",
+        str(_DETAIL_ID),
+        "--profile",
+        "smoke",
+        "--duration-seconds",
+        "1",
+    ]
+    child = MagicMock()
+    child.communicate.return_value = (child_output, None)
+    child.returncode = 0
+
+    with patch("scripts.http_load_profile.subprocess.Popen", return_value=child):
+        exit_code = supervised_main(arguments)
+
+    output = capsys.readouterr().out
+    assert exit_code == 2
+    assert json.loads(output) == {
+        "error": "CHILD_RESULT_INVALID",
+        "passed": False,
+        "profile": "SMOKE_NON_ACCEPTANCE",
+    }
+    assert output.count("\n") == 1
+    assert "token=value" not in output
+    assert str(_DETAIL_ID) not in output
+    assert "민감한 오류" not in output

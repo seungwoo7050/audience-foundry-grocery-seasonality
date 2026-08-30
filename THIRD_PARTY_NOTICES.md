@@ -9,6 +9,7 @@ digest를 함께 고정한다. 이 고지는 각 upstream license 원문을 대�
 | Python | `3.14.7` | application runtime | `python.org` | PSF-2.0 |
 | Django | `5.2.17` | SSR, Forms, Auth, ORM, migration | `djangoproject.com` | BSD-3-Clause |
 | Gunicorn | `23.0.0` | 고정 production WSGI process | `gunicorn.org` | MIT |
+| WhiteNoise | `6.12.0` | 해시·압축된 WSGI static asset 제공 | `whitenoise.readthedocs.io` | MIT |
 | Psycopg | `3.3.4` | PostgreSQL driver | `psycopg.org` | LGPL-3.0-only |
 | psycopg-binary | `3.3.4` | local candidate의 self-contained libpq runtime | `psycopg.org` | LGPL-3.0-only 및 wheel 내 고지 |
 | asgiref | `3.12.1` | Django 전이 runtime | `github.com/django/asgiref` | BSD-3-Clause |

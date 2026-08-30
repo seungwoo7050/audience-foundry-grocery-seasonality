@@ -63,6 +63,7 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "local-development-only-not-for
 ALLOWED_HOSTS = env_list("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1,testserver")
 CSRF_TRUSTED_ORIGINS = env_list("DJANGO_CSRF_TRUSTED_ORIGINS", "")
 DEPLOY_VERSION = os.environ.get("DEPLOY_VERSION", "0000000")
+CONTROL_PLANE_OPERATIONS_ENABLED = env_bool("CONTROL_PLANE_OPERATIONS_ENABLED", False)
 
 
 def validate_production_environment(

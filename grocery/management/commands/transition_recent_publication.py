@@ -7,13 +7,19 @@ import uuid
 from enum import StrEnum
 from typing import Final
 
+from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import transaction
 
+from grocery.management.control_plane import (
+    CONTROL_TRANSITION_REASON_CODES,
+    ControlPlaneCode,
+    ControlPlaneError,
+    preflight_operation,
+    resolve_operation_actor,
+)
 from grocery.management.local_phase0 import (
     LocalPhase0Error,
-    canonical_actor_id,
-    get_local_operator,
     require_sha256,
     require_uuid,
 )
@@ -97,7 +103,10 @@ def _revision_text(value: uuid.UUID | None) -> str:
 
 
 class Command(BaseCommand):
-    help = "Activate, roll back, or withdraw the local recent-retail publication pointer."
+    help = (
+        "Activate, roll back, or withdraw the recent-retail publication pointer. Production "
+        "requires an external-MFA private job; the control-plane flag is not authentication."
+    )
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--operation", required=True)
@@ -106,10 +115,18 @@ class Command(BaseCommand):
         parser.add_argument("--expected-version", required=True)
         parser.add_argument("--expected-current-revision", required=True)
         parser.add_argument("--target-revision")
+        parser.add_argument("--expected-release-sha")
 
     def handle(self, *args: object, **options: object) -> None:
         del args
+        expected_release_sha = options.get("expected_release_sha")
+        production = (
+            getattr(settings, "CONTROL_PLANE_OPERATIONS_ENABLED", False) is True
+            or expected_release_sha is not None
+        )
         try:
+            if production:
+                preflight_operation(expected_release_sha)
             operation = _operation(options.get("operation"))
             operation_id = require_uuid(options.get("operation_id"))
             evidence_hash = require_sha256(options.get("acceptance_evidence_sha256"))
@@ -119,35 +136,56 @@ class Command(BaseCommand):
                 invalid_code=_TransitionCode.EXPECTED_CURRENT_INVALID,
             )
             target = _target_revision(operation, options.get("target_revision"))
-            activation, created, actor_id = self._transition(
-                operation_id=operation_id,
-                operation=operation,
-                target_revision_id=target,
-                expected_current_revision_id=expected_current,
-                expected_version=expected_version,
-                reason_code=_REASON_CODES[operation],
-                evidence_hash=evidence_hash,
-            )
+            if production:
+                activation, created, actor_id = self._transition(
+                    operation_id=operation_id,
+                    operation=operation,
+                    target_revision_id=target,
+                    expected_current_revision_id=expected_current,
+                    expected_version=expected_version,
+                    reason_code=CONTROL_TRANSITION_REASON_CODES[operation],
+                    evidence_hash=evidence_hash,
+                    expected_release_sha=expected_release_sha,
+                )
+            else:
+                activation, created, actor_id = self._transition(
+                    operation_id=operation_id,
+                    operation=operation,
+                    target_revision_id=target,
+                    expected_current_revision_id=expected_current,
+                    expected_version=expected_version,
+                    reason_code=_REASON_CODES[operation],
+                    evidence_hash=evidence_hash,
+                )
+        except ControlPlaneError as error:
+            raise CommandError(f"code={error.code.value}") from None
         except LocalPhase0Error as error:
             raise CommandError(f"code={error.code.value}") from None
         except _TransitionError as error:
             raise CommandError(f"code={error.code.value}") from None
         except Exception:
-            raise CommandError(f"code={_TransitionCode.TRANSITION_FAILED.value}") from None
+            code = (
+                ControlPlaneCode.TRANSITION_FAILED.value
+                if production
+                else _TransitionCode.TRANSITION_FAILED.value
+            )
+            raise CommandError(f"code={code}") from None
 
-        self.stdout.write(
-            " ".join(
-                (
-                    f"status={_STATUS_CODES[operation]}",
-                    f"operation_id={activation.id}",
-                    f"previous_revision_id={_revision_text(activation.previous_revision_id)}",
-                    f"target_revision_id={_revision_text(activation.target_revision_id)}",
-                    f"actor_id={actor_id}",
-                    f"resulting_version={activation.sequence}",
-                    f"created={'yes' if created else 'no'}",
-                )
+        receipt = [
+            f"status={_STATUS_CODES[operation]}",
+            f"operation_id={activation.id}",
+            f"previous_revision_id={_revision_text(activation.previous_revision_id)}",
+            f"target_revision_id={_revision_text(activation.target_revision_id)}",
+        ]
+        if not production:
+            receipt.append(f"actor_id={actor_id}")
+        receipt.extend(
+            (
+                f"resulting_version={activation.sequence}",
+                f"created={'yes' if created else 'no'}",
             )
         )
+        self.stdout.write(" ".join(receipt))
 
     @staticmethod
     @transaction.atomic
@@ -160,12 +198,17 @@ class Command(BaseCommand):
         expected_version: int,
         reason_code: str,
         evidence_hash: str,
+        expected_release_sha: object = None,
     ) -> tuple[PublicationActivation, bool, int]:
-        actor = get_local_operator(lock=True)
+        authority = resolve_operation_actor(
+            role="publisher",
+            expected_release_sha=expected_release_sha,
+            lock=True,
+        )
         try:
             activation, created = transition_recent_publication(
                 operation_id=operation_id,
-                actor=actor,
+                actor=authority.actor,
                 operation=operation,
                 target_revision_id=target_revision_id,
                 expected_current_revision_id=expected_current_revision_id,
@@ -174,5 +217,7 @@ class Command(BaseCommand):
                 acceptance_evidence_sha256=evidence_hash,
             )
         except Exception:
+            if authority.production:
+                raise ControlPlaneError(ControlPlaneCode.TRANSITION_FAILED) from None
             raise _TransitionError(_TransitionCode.TRANSITION_FAILED) from None
-        return activation, created, canonical_actor_id(actor)
+        return activation, created, authority.actor_id

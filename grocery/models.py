@@ -7,7 +7,8 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
-from django.core.exceptions import ValidationError
+from django.conf import settings
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models, transaction
 from django.db.models import F, Q
@@ -1510,6 +1511,310 @@ def persist_reference_price_facts(
     return tuple(
         PriceChangeFact.get_or_validate(reference_price_id=reference.id) for reference in references
     )
+
+
+class ReviewDecision(models.Model):
+    """Append-only human decision over one complete parsed source generation."""
+
+    class Decision(models.TextChoices):
+        APPROVE = "APPROVE", "Approve"
+        REJECT = "REJECT", "Reject"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    decision = models.CharField(max_length=8, choices=Decision.choices)
+    reviewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="grocery_review_decisions",
+    )
+    decided_at = models.DateTimeField(default=timezone.now)
+    source_configuration = models.ForeignKey(
+        SourceConfiguration,
+        on_delete=models.PROTECT,
+        related_name="review_decisions",
+    )
+    source_artifact = models.ForeignKey(
+        SourceArtifact,
+        on_delete=models.PROTECT,
+        related_name="review_decisions",
+    )
+    parse_run = models.ForeignKey(
+        ParseRun,
+        on_delete=models.PROTECT,
+        related_name="review_decisions",
+    )
+    reconciliation_report_sha256 = models.CharField(
+        max_length=64,
+        validators=[sha256_validator],
+    )
+    acceptance_evidence_sha256 = models.CharField(
+        max_length=64,
+        validators=[sha256_validator],
+    )
+    reason_code = models.CharField(
+        max_length=64,
+        validators=[RegexValidator(r"^[A-Z][A-Z0-9_]*$")],
+    )
+    approved_mode = models.CharField(
+        max_length=32,
+        choices=SourceConfiguration.PublicationMode.choices,
+        blank=True,
+        default="",
+    )
+    approved_coverage_identity = models.CharField(max_length=128, blank=True, default="")
+    approved_coverage_evidence_revision = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+    )
+    supersedes = models.OneToOneField(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="superseding_decision",
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        permissions = [
+            ("review_generation", "Can review a parsed grocery source generation"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(decision__in=("APPROVE", "REJECT")),
+                name="grocery_review_decision_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(reconciliation_report_sha256__regex=SHA256_PATTERN),
+                name="grocery_review_report_hash_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(acceptance_evidence_sha256__regex=SHA256_PATTERN),
+                name="grocery_review_acceptance_hash_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(reason_code__regex=r"^[A-Z][A-Z0-9_]*$"),
+                name="grocery_review_reason_code_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(decision="APPROVE", approved_mode="RECENT_COMPARISON")
+                    & ~Q(approved_coverage_identity="")
+                    & ~Q(approved_coverage_evidence_revision="")
+                    | Q(
+                        decision="REJECT",
+                        approved_mode="",
+                        approved_coverage_identity="",
+                        approved_coverage_evidence_revision="",
+                    )
+                ),
+                name="grocery_review_approval_fields_valid",
+            ),
+            models.CheckConstraint(
+                condition=Q(supersedes__isnull=True) | ~Q(id=F("supersedes_id")),
+                name="grocery_review_not_self_supersede",
+            ),
+            models.UniqueConstraint(
+                fields=("source_configuration", "source_artifact", "parse_run"),
+                condition=Q(supersedes__isnull=True),
+                name="grocery_review_generation_root_uniq",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.parse_run_id}:{self.decision}:{self.id}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ValidationError("Review decisions are append-only.")
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        raise ValidationError("Review decisions are append-only.")
+
+    def clean(self) -> None:
+        super().clean()
+        if not all(
+            (
+                self.source_configuration_id,
+                self.source_artifact_id,
+                self.parse_run_id,
+            )
+        ):
+            return
+
+        source_configuration = self.source_configuration
+        source_artifact = self.source_artifact
+        parse_run = self.parse_run
+        rights_complete = all(
+            (
+                source_configuration.rights_evidence_locator,
+                source_configuration.rights_evidence_sha256,
+                source_configuration.rights_confirmed_at,
+            )
+        )
+        if source_configuration.state != SourceConfiguration.State.ACTIVE or not rights_complete:
+            raise ValidationError("Review requires an active source with complete rights evidence.")
+        if not FetchAttempt.objects.filter(
+            source_configuration=source_configuration,
+            artifact=source_artifact,
+            state=FetchAttempt.State.SUCCEEDED,
+        ).exists():
+            raise ValidationError(
+                "Review artifact must be linked to the source by a succeeded fetch attempt."
+            )
+        if parse_run.artifact_id != source_artifact.id:
+            raise ValidationError("Review parse run and source artifact do not match.")
+
+        if self.supersedes_id:
+            superseded = type(self).objects.filter(pk=self.supersedes_id).first()
+            if superseded is None:
+                raise ValidationError("Superseded review decision does not exist.")
+            if superseded.id == self.id:
+                raise ValidationError("A review decision cannot supersede itself.")
+            if (
+                superseded.source_configuration_id,
+                superseded.source_artifact_id,
+                superseded.parse_run_id,
+            ) != (
+                self.source_configuration_id,
+                self.source_artifact_id,
+                self.parse_run_id,
+            ):
+                raise ValidationError("A review decision can only supersede the same generation.")
+            if type(self).objects.filter(supersedes_id=superseded.id).exclude(pk=self.pk).exists():
+                raise ValidationError("Only the current review tail can be superseded.")
+        elif (
+            self._state.adding
+            and type(self)
+            .objects.filter(
+                source_configuration_id=self.source_configuration_id,
+                source_artifact_id=self.source_artifact_id,
+                parse_run_id=self.parse_run_id,
+                supersedes__isnull=True,
+            )
+            .exclude(pk=self.pk)
+            .exists()
+        ):
+            raise ValidationError("The review generation already has a root decision.")
+
+        if self.decision == self.Decision.REJECT:
+            if parse_run.completed_at is None or parse_run.status == ParseRun.Status.STARTED:
+                raise ValidationError("Rejected review decisions require a completed parse run.")
+            return
+
+        if self.decision != self.Decision.APPROVE:
+            return
+        if (
+            parse_run.status != ParseRun.Status.VALIDATED
+            or parse_run.completed_at is None
+            or not parse_run.result_hash
+            or parse_run.quarantined_row_count != 0
+        ):
+            raise ValidationError(
+                "Approved review decisions require a reconciled, validated parse run."
+            )
+        if (
+            source_configuration.publication_mode
+            != SourceConfiguration.PublicationMode.RECENT_COMPARISON
+            or self.approved_mode != source_configuration.publication_mode
+            or self.approved_coverage_identity != source_configuration.coverage_identity
+            or self.approved_coverage_evidence_revision
+            != source_configuration.coverage_evidence_revision
+        ):
+            raise ValidationError(
+                "Approved mode and coverage must exactly match the active source configuration."
+            )
+
+        snapshots = list(
+            RetailPriceSnapshot.objects.filter(parse_run=parse_run).prefetch_related(
+                "reference_prices__change_fact"
+            )
+        )
+        if len(snapshots) != parse_run.accepted_row_count:
+            raise ValidationError("Snapshot count must equal the parse accepted-row count.")
+        required_periods = {period.value for period in DomainComparisonPeriod}
+        for snapshot in snapshots:
+            references = list(snapshot.reference_prices.all())
+            if (
+                len(references) != 3
+                or {reference.period for reference in references} != required_periods
+            ):
+                raise ValidationError(
+                    "Every approved snapshot requires exact WEEK, MONTH, and YEAR references."
+                )
+            if any(not hasattr(reference, "change_fact") for reference in references):
+                raise ValidationError(
+                    "Every approved reference requires a deterministic price change fact."
+                )
+
+
+@transaction.atomic
+def record_review_decision(
+    *,
+    decision_id: uuid.UUID,
+    actor: Any,
+    decision: str,
+    source_configuration_id: uuid.UUID,
+    source_artifact_id: uuid.UUID,
+    parse_run_id: uuid.UUID,
+    reconciliation_report_sha256: str,
+    acceptance_evidence_sha256: str,
+    reason_code: str,
+    approved_mode: str = "",
+    approved_coverage_identity: str = "",
+    approved_coverage_evidence_revision: str = "",
+    supersedes_id: uuid.UUID | None = None,
+) -> tuple[ReviewDecision, bool]:
+    """Record one authorized decision, returning exact UUID replays idempotently."""
+
+    has_permission = getattr(actor, "has_perm", None)
+    if (
+        getattr(actor, "pk", None) is None
+        or not bool(getattr(actor, "is_authenticated", False))
+        or not bool(getattr(actor, "is_active", False))
+        or not callable(has_permission)
+        or not has_permission("grocery.review_generation")
+    ):
+        raise PermissionDenied("An active reviewer with review_generation permission is required.")
+
+    semantic_fields: dict[str, object] = {
+        "reviewer_id": actor.pk,
+        "decision": decision,
+        "source_configuration_id": source_configuration_id,
+        "source_artifact_id": source_artifact_id,
+        "parse_run_id": parse_run_id,
+        "reconciliation_report_sha256": reconciliation_report_sha256,
+        "acceptance_evidence_sha256": acceptance_evidence_sha256,
+        "reason_code": reason_code,
+        "approved_mode": approved_mode,
+        "approved_coverage_identity": approved_coverage_identity,
+        "approved_coverage_evidence_revision": approved_coverage_evidence_revision,
+        "supersedes_id": supersedes_id,
+    }
+    existing = ReviewDecision.objects.select_for_update().filter(pk=decision_id).first()
+    if existing is not None:
+        if any(
+            getattr(existing, field_name) != field_value
+            for field_name, field_value in semantic_fields.items()
+        ):
+            raise ValidationError("Review decision UUID replay conflicts with stored evidence.")
+        return existing, False
+
+    SourceConfiguration.objects.select_for_update().get(pk=source_configuration_id)
+    SourceArtifact.objects.select_for_update().get(pk=source_artifact_id)
+    ParseRun.objects.select_for_update().get(pk=parse_run_id)
+    list(
+        ReviewDecision.objects.select_for_update().filter(
+            source_configuration_id=source_configuration_id,
+            source_artifact_id=source_artifact_id,
+            parse_run_id=parse_run_id,
+        )
+    )
+    candidate = ReviewDecision(id=decision_id, **semantic_fields)
+    candidate.save()
+    return candidate, True
 
 
 def ordered_page_manifest_sha256(receipts: Sequence[PageReceipt]) -> str:

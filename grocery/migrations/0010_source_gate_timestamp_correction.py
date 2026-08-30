@@ -5,7 +5,9 @@ import uuid
 
 import django.core.validators
 import django.db.models.deletion
+from django.apps.registry import Apps
 from django.db import migrations, models
+from django.db.backends.base.schema import BaseDatabaseSchemaEditor
 
 SOURCE_CONFIGURATION_ID = uuid.UUID("e7c14e61-8c56-5758-b1ea-1ea87ea60a41")
 CORRECTION_ID = uuid.uuid5(
@@ -18,7 +20,10 @@ EFFECTIVE_TIMESTAMP = datetime.datetime(2026, 8, 30, 2, 23, 44, tzinfo=datetime.
 EVIDENCE_COMMIT_SHA = "d23e5707e1fc3bf6e032d459b149b946b0451e00"
 
 
-def append_legacy_gate_timestamp_correction(apps, schema_editor):
+def append_legacy_gate_timestamp_correction(
+    apps: Apps,
+    schema_editor: BaseDatabaseSchemaEditor,
+) -> None:
     del schema_editor
     SourceConfiguration = apps.get_model("grocery", "SourceConfiguration")
     FetchAttempt = apps.get_model("grocery", "FetchAttempt")
@@ -73,7 +78,10 @@ def append_legacy_gate_timestamp_correction(apps, schema_editor):
     )
 
 
-def remove_legacy_gate_timestamp_correction(apps, schema_editor):
+def remove_legacy_gate_timestamp_correction(
+    apps: Apps,
+    schema_editor: BaseDatabaseSchemaEditor,
+) -> None:
     del schema_editor
     Correction = apps.get_model(
         "grocery",

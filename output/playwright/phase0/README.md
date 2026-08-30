@@ -6,6 +6,8 @@ Generated on 2026-08-30 with Playwright CLI and Chromium 152 against the local D
 
 Manual screenshot inspection covered mobile catalog, mobile validation, mobile long-name stale detail, tablet catalog/detail, desktop catalog/detail, and desktop server error. No clipping, overlap, horizontal scrolling, hidden status meaning, or unreadable hierarchy was found after the mobile duplicate-breadcrumb fix.
 
+axe-core 4.13.0 checked the actual catalog and detail against WCAG 2 A/AA, WCAG 2.1 A/AA, and WCAG 2.2 AA: both pages had zero violations. Its only incomplete rule was contrast for decorative non-text symbols and text over the current-value gradient. The separate palette test checks every rendered foreground/background pair plus both gradient extremes at 4.5:1 or greater. `axe-results.json` SHA-256 is `a994c5a00a9f5f75213381c5be2ef49624eb796e202d3becd0daef4818d076a6`.
+
 All PNGs are full-page captures at the width encoded in the filename. SHA-256:
 
 ```text

@@ -13,7 +13,7 @@ services:
       timeout: 3s
       retries: 15
     ports:
-      - "127.0.0.1:55432:5432"
+      - "127.0.0.1:55434:5432"
     volumes:
       - grocery-postgres:/var/lib/postgresql
 

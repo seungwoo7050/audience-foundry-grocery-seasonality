@@ -81,7 +81,14 @@ def validate_production_environment(
         return
     if "DJANGO_SECRET_KEY" not in environment or len(secret_key) < 50:
         raise ImproperlyConfigured("production_secret_key_required")
-    if "DJANGO_ALLOWED_HOSTS" not in environment or not allowed_hosts or "*" in allowed_hosts:
+    if (
+        "DJANGO_ALLOWED_HOSTS" not in environment
+        or not allowed_hosts
+        or any(
+            host == "*" or host.startswith(".") or any(character in host for character in "/?#@:")
+            for host in allowed_hosts
+        )
+    ):
         raise ImproperlyConfigured("production_allowed_hosts_required")
     if "DJANGO_CSRF_TRUSTED_ORIGINS" not in environment or not csrf_trusted_origins:
         raise ImproperlyConfigured("production_csrf_origins_required")
@@ -105,6 +112,18 @@ def validate_production_environment(
         raise ImproperlyConfigured("production_deploy_version_required")
     if admin_enabled:
         raise ImproperlyConfigured("production_admin_strong_auth_not_configured")
+
+
+def validate_hsts_configuration(
+    *,
+    seconds: int,
+    include_subdomains: bool,
+    preload: bool,
+) -> None:
+    """Reject a preload opt-in that cannot meet the browser preload contract."""
+
+    if preload and (not include_subdomains or seconds < 31_536_000):
+        raise ImproperlyConfigured("production_hsts_preload_invalid")
 
 
 validate_production_environment(
@@ -181,8 +200,21 @@ CSRF_COOKIE_SECURE = not DEBUG
 SECURE_HSTS_SECONDS = int(
     os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "0" if DEBUG else "31536000")
 )
-SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
-SECURE_HSTS_PRELOAD = not DEBUG
+SECURE_HSTS_INCLUDE_SUBDOMAINS = env_bool(
+    "DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS",
+    False,
+)
+SECURE_HSTS_PRELOAD = env_bool("DJANGO_SECURE_HSTS_PRELOAD", False)
+SECURE_PROXY_SSL_HEADER = (
+    ("HTTP_X_FORWARDED_PROTO", "https")
+    if env_bool("DJANGO_TRUST_X_FORWARDED_PROTO", False)
+    else None
+)
+validate_hsts_configuration(
+    seconds=SECURE_HSTS_SECONDS,
+    include_subdomains=SECURE_HSTS_INCLUDE_SUBDOMAINS,
+    preload=SECURE_HSTS_PRELOAD,
+)
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"

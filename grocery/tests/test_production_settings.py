@@ -3,7 +3,11 @@ from collections.abc import Mapping, Sequence
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 
-from config.settings import env_positive_int, validate_production_environment
+from config.settings import (
+    env_positive_int,
+    validate_hsts_configuration,
+    validate_production_environment,
+)
 
 _SAFE_SECRET = "x" * 50
 _SAFE_HOSTS = ("prices.example",)
@@ -96,6 +100,14 @@ def test_complete_production_environment_is_accepted_with_admin_disabled() -> No
             "production_allowed_hosts_required",
         ),
         (
+            production_environment(),
+            False,
+            _SAFE_SECRET,
+            (".prices.example",),
+            _SAFE_ORIGINS,
+            "production_allowed_hosts_required",
+        ),
+        (
             {
                 "DJANGO_SECRET_KEY": "present",
                 "DJANGO_ALLOWED_HOSTS": "present",
@@ -184,3 +196,35 @@ def test_positive_integer_environment_bound_is_explicit() -> None:
         with pytest.MonkeyPatch.context() as monkeypatch:
             monkeypatch.setenv("BOUNDED_TEST_VALUE", "0")
             env_positive_int("BOUNDED_TEST_VALUE", 36, maximum=168)
+
+
+def test_hsts_preload_requires_explicit_subdomain_scope_and_one_year() -> None:
+    validate_hsts_configuration(
+        seconds=31_536_000,
+        include_subdomains=True,
+        preload=True,
+    )
+    validate_hsts_configuration(
+        seconds=31_536_000,
+        include_subdomains=False,
+        preload=False,
+    )
+
+    with pytest.raises(
+        ImproperlyConfigured,
+        match="^production_hsts_preload_invalid$",
+    ):
+        validate_hsts_configuration(
+            seconds=31_536_000,
+            include_subdomains=False,
+            preload=True,
+        )
+    with pytest.raises(
+        ImproperlyConfigured,
+        match="^production_hsts_preload_invalid$",
+    ):
+        validate_hsts_configuration(
+            seconds=31_535_999,
+            include_subdomains=True,
+            preload=True,
+        )

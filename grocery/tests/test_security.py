@@ -13,9 +13,7 @@ from grocery.security import (
 @pytest.mark.parametrize("status_code", [200, 400, 403, 404, 500])
 def test_security_headers_apply_to_success_and_error_responses(status_code: int) -> None:
     request = RequestFactory().get("/example")
-    middleware = SecurityHeadersMiddleware(
-        lambda unused_request: HttpResponse(status=status_code)
-    )
+    middleware = SecurityHeadersMiddleware(lambda unused_request: HttpResponse(status=status_code))
 
     response = middleware(request)
 
@@ -102,9 +100,7 @@ def test_admin_prefix_does_not_hide_unrelated_public_path() -> None:
         del unused_request
         return HttpResponse(status=204)
 
-    response = AdminExposureMiddleware(downstream)(
-        RequestFactory().get("/administrator/help")
-    )
+    response = AdminExposureMiddleware(downstream)(RequestFactory().get("/administrator/help"))
 
     assert response.status_code == 204
 
@@ -119,8 +115,7 @@ def test_malicious_query_is_not_reflected_in_headers_or_admin_error() -> None:
 
     response = middleware(request)
     serialized_headers = "\n".join(
-        f"{header_name}: {header_value}"
-        for header_name, header_value in response.headers.items()
+        f"{header_name}: {header_value}" for header_name, header_value in response.headers.items()
     )
     assert isinstance(response, HttpResponse)
     body = response.content.decode("utf-8")

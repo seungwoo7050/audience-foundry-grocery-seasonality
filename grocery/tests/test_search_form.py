@@ -50,9 +50,7 @@ def test_rejects_control_and_hidden_separator_input(query: str) -> None:
     form = SearchForm({"q": query, "category": "fruit"})
 
     assert not form.is_valid()
-    assert list(form.errors["q"]) == [
-        "검색어에는 줄바꿈이나 제어 문자를 사용할 수 없습니다."
-    ]
+    assert list(form.errors["q"]) == ["검색어에는 줄바꿈이나 제어 문자를 사용할 수 없습니다."]
     assert "q" not in form.cleaned_data
     assert form.cleaned_data["category"] == "fruit"
 
@@ -72,7 +70,5 @@ def test_errors_do_not_echo_provider_or_secret_like_input() -> None:
     rendered_errors = str(form.errors)
     assert marker not in rendered_errors
     assert "synthetic-marker" not in rendered_errors
-    assert list(form.errors["q"]) == [
-        "검색어에는 줄바꿈이나 제어 문자를 사용할 수 없습니다."
-    ]
+    assert list(form.errors["q"]) == ["검색어에는 줄바꿈이나 제어 문자를 사용할 수 없습니다."]
     assert list(form.errors["category"]) == ["부류 선택을 확인해 주세요."]

@@ -63,9 +63,7 @@ class ReferencePrice:
         if not isinstance(self.value_status, ValueStatus):
             raise PriceValidationError("value_status must be a ValueStatus")
         if not isinstance(self.reference_date_status, ReferenceDateStatus):
-            raise PriceValidationError(
-                "reference_date_status must be a ReferenceDateStatus"
-            )
+            raise PriceValidationError("reference_date_status must be a ReferenceDateStatus")
 
         if self.value_status is ValueStatus.AVAILABLE:
             if self.value is None or self.unavailable_reason is not None:
@@ -179,6 +177,5 @@ def compare_snapshot(snapshot: PriceSnapshot) -> tuple[PriceComparison, ...]:
 
     by_period = {reference.period: reference for reference in snapshot.references}
     return tuple(
-        _compare_reference(snapshot.current_value, by_period[period])
-        for period in ComparisonPeriod
+        _compare_reference(snapshot.current_value, by_period[period]) for period in ComparisonPeriod
     )

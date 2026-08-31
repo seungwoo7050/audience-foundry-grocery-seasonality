@@ -7,18 +7,20 @@ from datetime import datetime, timedelta
 from typing import Final
 
 from django.conf import settings
-from django.core.exceptions import ValidationError
-from django.db.models import QuerySet
+from django.core.exceptions import ObjectDoesNotExist, ValidationError
+from django.db.models import Prefetch, QuerySet
 from django.utils import timezone
 
 from grocery.models import (
     FetchAttempt,
+    PriceChangeFact,
     PublicationChannel,
     PublicationEntry,
     PublicationRevision,
     ReferencePrice,
 )
 from grocery.presentation import (
+    comparison_microbar,
     direction_label,
     format_absolute_krw,
     format_korean_date,
@@ -112,19 +114,29 @@ def load_active_publication(*, observed_at: datetime | None = None) -> ActivePub
             revision=revision,
             checked_at=confirmed_attempt.completed_at,
             freshness_state="stale",
-            freshness_label="마지막 검토 자료 · 새 확인 필요",
+            freshness_label="마지막 공개 자료 · 최근 확인 필요",
             stale_message=(
-                "아래에는 마지막으로 검토해 공개한 조사값을 표시합니다. "
-                "새 수집 또는 검토 상태를 운영자가 확인하고 있습니다."
+                "최근 자료 확인이 필요합니다. 마지막으로 검토를 마친 조사값을 표시합니다."
             ),
         )
     return ActivePublication(
         revision=revision,
         checked_at=confirmed_attempt.completed_at,
         freshness_state="current",
-        freshness_label="마지막 source 확인 완료",
+        freshness_label="KAMIS 자료 확인 완료",
         stale_message="",
     )
+
+
+def publication_context(active: ActivePublication) -> dict[str, str]:
+    """Expose one publication-level freshness summary without row repetition."""
+
+    return {
+        "checked_at_iso": active.checked_at.isoformat(),
+        "checked_at_display": format_korean_datetime(active.checked_at),
+        "freshness_state": active.freshness_state,
+        "freshness_label": active.freshness_label,
+    }
 
 
 def publication_entries(
@@ -133,14 +145,27 @@ def publication_entries(
     query: str,
     category: str,
 ) -> QuerySet[PublicationEntry]:
-    entries = active.revision.entries.select_related("snapshot__series").order_by(
-        "snapshot__series__category_code",
-        "snapshot__series__item_name",
-        "snapshot__series__item_code",
-        "snapshot__series__variety_code",
-        "snapshot__series__grade_code",
-        "snapshot__series__raw_unit",
-        "snapshot__series__raw_unit_size",
+    catalog_week_references = ReferencePrice.objects.filter(
+        period=ReferencePrice.Period.WEEK
+    ).select_related("change_fact")
+    entries = (
+        active.revision.entries.select_related("snapshot__series")
+        .prefetch_related(
+            Prefetch(
+                "snapshot__reference_prices",
+                queryset=catalog_week_references,
+                to_attr="catalog_week_references",
+            )
+        )
+        .order_by(
+            "snapshot__series__category_code",
+            "snapshot__series__item_name",
+            "snapshot__series__item_code",
+            "snapshot__series__variety_code",
+            "snapshot__series__grade_code",
+            "snapshot__series__raw_unit",
+            "snapshot__series__raw_unit_size",
+        )
     )
     if category:
         entries = entries.filter(snapshot__series__category_code=_CATEGORY_CODES[category])
@@ -149,7 +174,12 @@ def publication_entries(
     return entries[:PUBLIC_RESULT_LIMIT]
 
 
-def catalog_item(entry: PublicationEntry, active: ActivePublication, *, url: str) -> dict[str, str]:
+def catalog_item(
+    entry: PublicationEntry,
+    active: ActivePublication,
+    *,
+    url: str,
+) -> dict[str, object]:
     snapshot = entry.snapshot
     series = snapshot.series
     return {
@@ -164,6 +194,7 @@ def catalog_item(entry: PublicationEntry, active: ActivePublication, *, url: str
         "source_date_label": format_korean_date(snapshot.source_effective_date),
         "freshness_state": active.freshness_state,
         "freshness_label": active.freshness_label,
+        "week_comparison": _catalog_week_comparison(snapshot),
     }
 
 
@@ -180,6 +211,7 @@ def detail_context(entry: PublicationEntry, active: ActivePublication) -> dict[s
     if coverage_label is None:
         raise ValidationError("Published detail has an unknown coverage identity.")
 
+    publication = publication_context(active)
     return {
         "series": {
             "category_label": series.category_name,
@@ -198,55 +230,118 @@ def detail_context(entry: PublicationEntry, active: ActivePublication) -> dict[s
             "source_date_iso": snapshot.source_effective_date.isoformat(),
             "source_date_label": format_korean_date(snapshot.source_effective_date),
             "coverage_label": coverage_label,
-            "checked_at_iso": active.checked_at.isoformat(),
-            "checked_at_label": format_korean_datetime(active.checked_at),
+            "checked_at_iso": publication["checked_at_iso"],
+            "checked_at_display": publication["checked_at_display"],
             "reviewed_at_iso": active.revision.review_decision.decided_at.isoformat(),
             "reviewed_at_label": format_korean_datetime(active.revision.review_decision.decided_at),
-            "freshness_state": active.freshness_state,
-            "freshness_label": active.freshness_label,
+            "freshness_state": publication["freshness_state"],
+            "freshness_label": publication["freshness_label"],
         },
     }
 
 
+def _catalog_week_comparison(snapshot: object) -> dict[str, object]:
+    references = getattr(snapshot, "catalog_week_references", None)
+    if not isinstance(references, list) or len(references) != 1:
+        raise ValidationError("Published catalog requires exactly one WEEK reference.")
+    reference = references[0]
+    if not isinstance(reference, ReferencePrice) or reference.period != ReferencePrice.Period.WEEK:
+        raise ValidationError("Published catalog WEEK reference is malformed.")
+    return _comparison_context(reference)
+
+
 def _comparison_context(reference: ReferencePrice) -> dict[str, object]:
+    try:
+        period_label = _PERIOD_LABELS[reference.period]
+    except KeyError as error:
+        raise ValidationError("Published comparison period is unknown.") from error
+
+    if (
+        reference.reference_date_status
+        != ReferencePrice.ReferenceDateStatus.SOURCE_REFERENCE_DATE_UNAVAILABLE
+        or reference.source_reference_date is not None
+    ):
+        raise ValidationError("Published comparison reference date is malformed.")
+
+    try:
+        change = reference.change_fact
+    except ObjectDoesNotExist as error:
+        raise ValidationError("Published comparison has no change fact.") from error
+
     base: dict[str, object] = {
-        "period_label": _PERIOD_LABELS[reference.period],
-        "reference_date_available": reference.source_reference_date is not None,
-        "reference_date_iso": (
-            reference.source_reference_date.isoformat()
-            if reference.source_reference_date is not None
-            else ""
-        ),
-        "reference_date_label": (
-            format_korean_date(reference.source_reference_date)
-            if reference.source_reference_date is not None
-            else ""
-        ),
+        "period_label": period_label,
+        "reference_date_display": "",
+        "reference_date_unavailable": True,
     }
     if reference.value_status == ReferencePrice.ValueStatus.UNAVAILABLE:
+        if (
+            reference.value is not None
+            or reference.unavailable_reason != ReferencePrice.UnavailableReason.SOURCE_VALUE_MISSING
+            or change.direction != PriceChangeFact.Direction.UNAVAILABLE
+            or change.signed_difference is not None
+            or change.signed_percentage is not None
+        ):
+            raise ValidationError("Published unavailable comparison is malformed.")
         base.update(
             {
                 "available": False,
-                "unavailable_reason_label": "source 응답에 비교 제공값이 없습니다.",
+                "reference_price_display": "",
+                "difference_display": "",
+                "percentage_display": "",
+                "direction_code": PriceChangeFact.Direction.UNAVAILABLE,
+                "direction_label": direction_label(PriceChangeFact.Direction.UNAVAILABLE),
+                "unavailable_reason": "KAMIS가 이 기간의 비교값을 제공하지 않았습니다.",
+                "microbar": None,
             }
         )
         return base
 
+    if reference.value_status != ReferencePrice.ValueStatus.AVAILABLE:
+        raise ValidationError("Published comparison value state is unknown.")
     change = reference.change_fact
     if (
         reference.value is None
+        or reference.unavailable_reason is not None
         or change.signed_difference is None
         or change.signed_percentage is None
     ):
         raise ValidationError("An available reference requires a complete change fact.")
+
+    try:
+        if (
+            change.direction == PriceChangeFact.Direction.LOWER
+            and not (change.signed_difference < 0 and change.signed_percentage < 0)
+            or change.direction == PriceChangeFact.Direction.EQUAL
+            and not (change.signed_difference == 0 and change.signed_percentage == 0)
+            or change.direction == PriceChangeFact.Direction.HIGHER
+            and not (change.signed_difference > 0 and change.signed_percentage > 0)
+            or change.direction
+            not in {
+                PriceChangeFact.Direction.LOWER,
+                PriceChangeFact.Direction.EQUAL,
+                PriceChangeFact.Direction.HIGHER,
+            }
+        ):
+            raise ValidationError("Published comparison direction is malformed.")
+
+        reference_price_display = format_krw(reference.value)
+        difference_display = format_absolute_krw(change.signed_difference)
+        percentage_display = format_signed_percentage(change.signed_percentage)
+        display_direction = direction_label(change.direction)
+        microbar = comparison_microbar(change.signed_percentage, change.direction)
+    except (ArithmeticError, ValueError) as error:
+        raise ValidationError("Published comparison numeric values are malformed.") from error
+
     base.update(
         {
             "available": True,
-            "reference_value_label": format_krw(reference.value),
-            "difference_label": format_absolute_krw(change.signed_difference),
-            "percentage_label": format_signed_percentage(change.signed_percentage),
+            "reference_price_display": reference_price_display,
+            "difference_display": difference_display,
+            "percentage_display": percentage_display,
             "direction_code": change.direction,
-            "direction_label": direction_label(change.direction),
+            "direction_label": display_direction,
+            "unavailable_reason": "",
+            "microbar": microbar,
         }
     )
     return base

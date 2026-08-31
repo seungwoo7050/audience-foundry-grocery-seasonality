@@ -49,10 +49,7 @@ class HistoricalRetailPublicationChannel(models.Model):
         return f"{self.channel}:{self.version}:{self.current_revision_id or 'WITHDRAWN'}"
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        if not self._state.adding:
-            raise ValidationError("Historical publication channels change only through events.")
-        self.full_clean()
-        super().save(*args, **kwargs)
+        raise ValidationError("Historical publication channels use the transition service.")
 
     def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
         raise ValidationError("Historical publication channels cannot be deleted.")

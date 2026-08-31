@@ -75,6 +75,9 @@ class SourceConfiguration(models.Model):
         RECENT_COMPARISON = "RECENT_COMPARISON", "Recent comparison"
         CURRENT_ONLY = "CURRENT_ONLY", "Current only"
         STATIC_MONTHLY_FILE = "STATIC_MONTHLY_FILE", "Static monthly file"
+        HISTORICAL_MONTHLY = "HISTORICAL_MONTHLY", "Historical monthly retail"
+        HISTORICAL_REGIONAL = "HISTORICAL_REGIONAL", "Historical regional retail"
+        HISTORICAL_MARKET = "HISTORICAL_MARKET", "Historical market retail"
 
     class EndpointScheme(models.TextChoices):
         HTTPS = "https", "HTTPS"
@@ -176,6 +179,9 @@ class SourceConfiguration(models.Model):
                         "RECENT_COMPARISON",
                         "CURRENT_ONLY",
                         "STATIC_MONTHLY_FILE",
+                        "HISTORICAL_MONTHLY",
+                        "HISTORICAL_REGIONAL",
+                        "HISTORICAL_MARKET",
                     )
                 ),
                 name="grocery_source_publication_mode_valid",
@@ -235,7 +241,7 @@ class SourceConfiguration(models.Model):
             models.CheckConstraint(
                 condition=Q(
                     schedule_interval_hours__gt=0,
-                    schedule_interval_hours__lte=24,
+                    schedule_interval_hours__lte=168,
                 ),
                 name="grocery_source_schedule_interval_valid",
             ),
@@ -603,6 +609,12 @@ class FetchAttempt(models.Model):
         max_length=512,
         validators=[validate_redacted_request_shape],
     )
+    request_scope_sha256 = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        validators=[sha256_validator],
+    )
     received_page_count = models.PositiveIntegerField(default=0)
     received_row_count = models.PositiveIntegerField(default=0)
     received_byte_count = models.PositiveBigIntegerField(default=0)
@@ -635,6 +647,11 @@ class FetchAttempt(models.Model):
                 & Q(received_row_count__gte=0)
                 & Q(received_byte_count__gte=0),
                 name="grocery_fetch_counts_nonnegative",
+            ),
+            models.CheckConstraint(
+                condition=Q(request_scope_sha256="")
+                | Q(request_scope_sha256__regex=SHA256_PATTERN),
+                name="grocery_fetch_scope_hash_valid",
             ),
             models.CheckConstraint(
                 condition=Q(failure_class="")
@@ -703,8 +720,15 @@ class FetchAttempt(models.Model):
             raise ValidationError(
                 {"artifact": "Only a succeeded attempt can reference an artifact."}
             )
-        if artifact.source_identity != self.source_configuration.artifact_source_identity:
+        if artifact.source_identity != self.artifact_source_identity:
             raise ValidationError({"artifact": "Artifact and attempt source identities differ."})
+
+    @property
+    def artifact_source_identity(self) -> str:
+        base = self.source_configuration.artifact_source_identity
+        if not self.request_scope_sha256:
+            return base
+        return f"{base}:scope-sha256:{self.request_scope_sha256}"
 
 
 class PageReceipt(models.Model):
@@ -2654,7 +2678,7 @@ def build_source_artifact(attempt_id: uuid.UUID) -> tuple[SourceArtifact, bool]:
         raise ValidationError("Attempt counters do not reconcile with its page receipts.")
 
     manifest_sha256 = ordered_page_manifest_sha256(receipts)
-    source_identity = attempt.source_configuration.artifact_source_identity
+    source_identity = attempt.artifact_source_identity
     defaults: dict[str, Any] = {
         "page_count": len(receipts),
         "total_bytes": received_bytes,

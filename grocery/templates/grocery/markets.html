@@ -1,0 +1,71 @@
+{% extends "grocery/base.html" %}
+
+{% block title %}{{ series.item_name|default:"품목" }} 시장별 조사값 | 초록장부{% endblock %}
+
+{% block content %}
+  {% include "grocery/_historical_header.html" with page_eyebrow="시장별 소매 조사값" page_summary="선택한 지역과 조사일에 KAMIS가 기록한 시장별 소매 조사값을 확인합니다." back_url=regions_url back_label="지역별 조사값" %}
+
+  {% if markets_state == "loading" or markets_state == "unavailable" or markets_state == "server_error" %}
+    {% include "grocery/_state_notice.html" with state=markets_state retry_url=retry_url %}
+  {% else %}
+    {% if markets_state == "validation" %}
+      {% include "grocery/_form_errors.html" with validation_errors=validation_errors %}
+    {% elif markets_state == "stale" %}
+      {% include "grocery/_state_notice.html" with state="stale" %}
+    {% endif %}
+
+    {% include "grocery/_publication_summary.html" with publication=historical_publication publication_label="시장별 공개 자료 정보" %}
+
+    <section class="market-scope" aria-labelledby="market-scope-heading">
+      <div>
+        <p class="eyebrow">선택 지역</p>
+        <h2 id="market-scope-heading">{{ selected_region.label }}</h2>
+      </div>
+      <form class="scope-form scope-form--date" action="{{ markets_form_action|default:'' }}" method="get">
+        <div class="field-group">
+          <label for="markets-date">조사일</label>
+          <select id="markets-date" name="date"{% if date_error %} aria-invalid="true"{% endif %}>
+            {% for option in date_options %}
+              <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button class="button button--primary" type="submit">조사일 적용</button>
+      </form>
+    </section>
+
+    {% if markets_state == "validation" %}
+    {% elif market_rows %}
+      <section class="market-section" aria-labelledby="markets-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">{{ selected_date.label }}</p>
+            <h2 id="markets-heading">시장별 조사값</h2>
+          </div>
+          {% if result_count_label %}<p class="result-count">{{ result_count_label }}</p>{% endif %}
+        </div>
+        <p class="section-note">시장명은 KAMIS 공식 이름 순서로 표시합니다. 각 값은 시장별 관측이며 지역 평균이 아닙니다.</p>
+
+        <div class="market-ledger">
+          <div class="market-ledger__head" aria-hidden="true">
+            <span>시장</span><span>소매 조사값</span><span>조사일</span>
+          </div>
+          <ol class="market-list">
+            {% for row in market_rows %}
+              <li class="market-row">
+                <h3>{{ row.market_name }}</h3>
+                <dl class="market-row__price"><dt>소매 조사값</dt><dd><data value="{{ row.price_machine }}">{{ row.price_label }}</data></dd></dl>
+                <dl class="market-row__date"><dt>조사일</dt><dd><time datetime="{{ row.survey_date_iso }}">{{ row.survey_date_label }}</time></dd></dl>
+              </li>
+            {% endfor %}
+          </ol>
+        </div>
+        {% include "grocery/_pagination.html" with pagination=pagination %}
+      </section>
+    {% else %}
+      {% include "grocery/_state_notice.html" with state="server_error" retry_url=retry_url %}
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block footer_note %}표시값은 KAMIS가 기록한 시장별 소매 조사값입니다. 개별 판매처의 실제 판매 금액과 다를 수 있습니다.{% endblock %}

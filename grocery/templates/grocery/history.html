@@ -1,0 +1,122 @@
+{% extends "grocery/base.html" %}
+
+{% block title %}{{ series.item_name|default:"품목" }} 월별 기록 | 초록장부{% endblock %}
+
+{% block content %}
+  {% include "grocery/_historical_header.html" with page_eyebrow="월별 과거 가격 패턴" page_summary="선택한 지역에서 KAMIS가 제공한 월별 소매 조사 평균과 조사 범위를 확인합니다." %}
+
+  {% if history_state == "loading" or history_state == "unavailable" or history_state == "server_error" %}
+    {% include "grocery/_state_notice.html" with state=history_state retry_url=retry_url %}
+  {% else %}
+    {% if history_state == "validation" %}
+      {% include "grocery/_form_errors.html" with validation_errors=validation_errors %}
+    {% elif history_state == "stale" %}
+      {% include "grocery/_state_notice.html" with state="stale" %}
+    {% endif %}
+
+    {% include "grocery/_publication_summary.html" with publication=historical_publication publication_label="월별 공개 자료 정보" %}
+
+    <section class="scope-controls" aria-labelledby="history-scope-heading">
+      <div class="scope-controls__heading">
+        <h2 id="history-scope-heading">지역과 기간</h2>
+        <p>지역과 품목 조건이 같은 월별 값만 이어서 표시합니다.</p>
+      </div>
+      <form class="scope-form" action="{{ history_form_action|default:'' }}" method="get">
+        <div class="field-group">
+          <label for="history-region">지역</label>
+          <select id="history-region" name="region"{% if region_error %} aria-invalid="true" aria-describedby="validation-title"{% endif %}>
+            {% if not selected_region %}<option value="" selected>지역을 선택하세요</option>{% endif %}
+            {% for option in region_options %}
+              <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="field-group">
+          <label for="history-range">표시 기간</label>
+          <select id="history-range" name="range"{% if range_error %} aria-invalid="true" aria-describedby="validation-title"{% endif %}>
+            {% for option in range_options %}
+              <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button class="button button--primary" type="submit">월별 기록 보기</button>
+      </form>
+    </section>
+
+    {% if history_state == "validation" %}
+    {% elif history_state == "selection_required" %}
+      {% include "grocery/_state_notice.html" with state="selection_required" %}
+    {% elif monthly_points %}
+      <section class="history-section" aria-labelledby="history-heading">
+        <div class="section-heading section-heading--stacked">
+          <p class="eyebrow">{{ selected_region.label }} · {{ selected_range.label }}</p>
+          <h2 id="history-heading">월별 조사값</h2>
+          <p>선은 월 조사 평균, 옅은 범위는 같은 달의 최저·최고 조사값입니다.</p>
+        </div>
+
+        {% if history_chart %}
+          <figure class="history-chart">
+            <svg
+              class="history-chart__svg"
+              viewBox="{{ history_chart.view_box }}"
+              aria-hidden="true"
+              focusable="false"
+            >
+              {% for tick in history_chart.y_ticks %}
+                <line class="history-chart__guide" x1="{{ tick.x1 }}" y1="{{ tick.y }}" x2="{{ tick.x2 }}" y2="{{ tick.y }}"/>
+                <text class="history-chart__label" x="{{ tick.label_x }}" y="{{ tick.label_y }}">{{ tick.label }}</text>
+              {% endfor %}
+              {% for segment in history_chart.range_segments %}
+                <polygon class="history-chart__range" points="{{ segment.points }}"/>
+              {% endfor %}
+              {% for segment in history_chart.mean_segments %}
+                <polyline class="history-chart__mean" points="{{ segment.points }}"/>
+              {% endfor %}
+              {% for point in history_chart.points %}
+                <circle class="history-chart__point" cx="{{ point.x }}" cy="{{ point.y }}" r="3"/>
+              {% endfor %}
+              {% for tick in history_chart.x_ticks %}
+                <text class="history-chart__label history-chart__label--x" x="{{ tick.x }}" y="{{ tick.y }}">{{ tick.label }}</text>
+              {% endfor %}
+            </svg>
+            <figcaption id="history-chart-caption">
+              {{ selected_region.label }}의 {{ selected_range.label }} 월별 KAMIS 소매 조사값
+            </figcaption>
+            <ul class="chart-key" aria-hidden="true">
+              <li><span class="chart-key__line"></span>월 조사 평균</li>
+              <li><span class="chart-key__range"></span>월 최저·최고 조사 범위</li>
+            </ul>
+          </figure>
+        {% endif %}
+
+        <div class="month-ledger">
+          <div class="month-ledger__head" aria-hidden="true">
+            <span>연월</span><span>소매 조사 평균</span><span>월 최저 조사값</span><span>월 최고 조사값</span>
+          </div>
+          <ol class="month-list">
+            {% for point in monthly_points %}
+              <li class="month-row{% if not point.available %} month-row--unavailable{% endif %}">
+                <p class="month-row__date">
+                  {% if point.period_iso %}<time datetime="{{ point.period_iso }}">{% endif %}{{ point.period_label }}{% if point.period_iso %}</time>{% endif %}
+                </p>
+                {% if point.available %}
+                  <dl class="month-row__facts">
+                    <div><dt>소매 조사 평균</dt><dd><data value="{{ point.mean_machine }}">{{ point.mean_label }}</data></dd></div>
+                    <div><dt>월 최저 조사값</dt><dd><data value="{{ point.minimum_machine }}">{{ point.minimum_label }}</data></dd></div>
+                    <div><dt>월 최고 조사값</dt><dd><data value="{{ point.maximum_machine }}">{{ point.maximum_label }}</data></dd></div>
+                  </dl>
+                {% else %}
+                  <p class="month-row__missing">{{ point.unavailable_label }}</p>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ol>
+        </div>
+      </section>
+    {% else %}
+      {% include "grocery/_state_notice.html" with state="server_error" retry_url=retry_url %}
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block footer_note %}표시값은 KAMIS가 제공한 월별 소매 조사 평균·최저·최고입니다. 개별 판매처의 실제 판매 금액과 다를 수 있습니다.{% endblock %}

@@ -28,12 +28,13 @@ catalog는 다음 값만 허용한다.
 - `period`: `week`, `month`, `year`; 기본 `week`
 - `direction`: `all`, `lower`, `equal`, `higher`, `unavailable`; 기본 `all`
 - `sort`: `name`, `change_asc`, `change_desc`; 기본 `name`
-- `page`: canonical decimal integer 1–100; 기본 1
+- `page`: canonical decimal integer 1–100; 기본 1. `q`가 있으면 1만 허용
 
-한 page는 30개다. change sort는 available signed percentage를 정렬하고 unavailable을 항상
-뒤에 둔다. 동률은 category, 공식 품목명과 exact series identity 순서로 고정한다. period,
-direction과 sort는 sealed recent reference·change fact만 사용하며 view나 template에서 다시
-계산하지 않는다.
+한 page는 30개다. 유효한 `q`도 HTML, heading, input value와 generated URL에 반사하지 않는 기존
+privacy 계약을 유지하므로 검색 결과는 최대 30개 단일 page다. 검색 없는 탐색만 pagination한다.
+change sort는 available signed percentage를 정렬하고 unavailable을 항상 뒤에 둔다. 동률은
+category, 공식 품목명과 exact series identity 순서로 고정한다. period, direction과 sort는 sealed
+recent reference·change fact만 사용하며 view나 template에서 다시 계산하지 않는다.
 
 history는 `range=12|36|60`과 `region=<uuid>`만 받는다. 기본 range는 36이다. 12개월은 36개월
 completeness를 통과한 series·region에서만, 60개월은 완전한 60개월이 있을 때만 선택지로
@@ -52,8 +53,8 @@ publication에서 사라진 valid UUID는 값 자체를 반사하지 않고 제�
 state다. 합계, 절약액, 서로 다른 단위의 정렬과 품목 간 우열은 계산하지 않는다.
 
 알 수 없는 parameter, 중복이 허용되지 않은 parameter, 비canonical page·date·UUID와 범위 밖
-값은 400이다. 정상화된 유효값만 form과 link에 다시 표시한다. invalid raw value와 전체 query는
-response, log, metric, audit와 artifact에 남기지 않는다.
+값은 400이다. 검색어를 제외한 정상화된 유효 enum·date·UUID만 form과 link에 다시 표시한다.
+검색어, invalid raw value와 전체 query는 response, log, metric, audit와 artifact에 남기지 않는다.
 
 ## active publication 결합
 
@@ -66,9 +67,9 @@ fallback join은 금지한다. historical bundle 안에 대응 series가 없으�
 작동하고 확장 link를 숨긴다. 직접 요청한 확장 화면은 공개 recent series라면 200 unavailable,
 공개 recent series가 아니면 404다.
 
-catalog·detail·selection은 기존 `X-Publication-Fact-Set-SHA256`를 유지한다. historical 화면은
-`X-Historical-Fact-Set-SHA256`를 제공한다. 두 publication을 실제로 읽은 response만 두 header를
-모두 제공한다. header 값은 sealed revision의 검증된 lowercase SHA-256 literal이다.
+catalog·detail·selection은 기존 `X-Publication-Fact-Set`를 유지한다. historical 화면은
+`X-Historical-Publication-Fact-Set`를 제공한다. 두 publication을 실제로 읽은 response만 두
+header를 모두 제공한다. header 값은 sealed revision의 검증된 lowercase SHA-256 literal이다.
 
 ## presentation context
 

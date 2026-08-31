@@ -23,6 +23,10 @@
       {% include "grocery/_form_errors.html" with validation_errors=validation_errors %}
       <a class="button button--primary" href="{{ catalog_url|default:'/' }}">공개 목록에서 다시 선택하기</a>
     {% else %}
+      {% if selection_is_stale %}
+        {% include "grocery/_state_notice.html" with state="stale" %}
+      {% endif %}
+
       {% if selection_state == "partial" %}
         {% include "grocery/_state_notice.html" with state="partial" excluded_count=excluded_count %}
       {% endif %}

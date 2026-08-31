@@ -89,3 +89,22 @@ def test_selection_add_form_has_limit_and_candidate_empty_states() -> None:
     assert "현재 목록에 더 추가할 수 있는 공개 품목이 없습니다." in empty
     assert 'class="selection-add__form"' not in limit
     assert 'class="selection-add__form"' not in empty
+
+
+def test_selection_renders_stale_publication_and_partial_exclusion_together() -> None:
+    html = render_to_string(
+        "grocery/selection.html",
+        {
+            "selection_state": "partial",
+            "selection_is_stale": True,
+            "excluded_count": 2,
+            "items": [],
+            "publication": {**PUBLICATION, "freshness_state": "stale"},
+            "selection_limit_reached": False,
+            "can_add_selection": False,
+        },
+    )
+
+    assert "마지막 공개 자료를 표시합니다" in html
+    assert "일부 품목을 제외했습니다" in html
+    assert "현재 공개 목록에 없는 품목 2개는 표시하지 않았습니다." in html

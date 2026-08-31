@@ -260,7 +260,8 @@ production readiness, live historical data 검증, 배포 또는 traffic 공개 
 - 검증 대상 application·운영 문서 exact SHA는
   `cb0d4264ceee434fd66ff230cac0c29fe28308a2`, evidence commit은 `5119b3b`다. 이 부록을 포함하는
   최종 local `main` SHA는 문서가 자기 commit을 참조할 수 없으므로 완료 응답에서 고정한다.
-- `origin`은 vNext 시작 기준선에 그대로 남아 있고 이번 구현은 push·deploy하지 않았다.
+- 이 부록 최초 작성 시점에는 `origin`이 vNext 시작 기준선에 남아 있었다. 이후 source-to-SSR
+  follow-up과 승인된 remote 고정 결과는 아래 추가 증거와 세션 완료 응답에서 구분해 기록한다.
 
 ## 2. schema·fixture·필수 gate
 
@@ -316,3 +317,18 @@ production readiness, live historical data 검증, 배포 또는 traffic 공개 
   recent-only다. historical 전용 health/authoritative inspection, canonical backup restore와
   이전 release의 migration `0028`·vNext route rollback 호환성을 별도로 증명하기 전에는
   historical production traffic을 열지 않는다.
+
+## 5. 실제 source-to-SSR follow-up evidence
+
+2026-08-31(KST), test commit `0eb9d62`의 명시적 opt-in smoke를 exact disposable loopback
+PostgreSQL에서 실제 실행했다. 네 공식 API를 normal adapter로 호출해 최근 10행, 월별 36행,
+지역별 1행, 시장별 9행을 typed model에 통과시킨 뒤 test-only mapping·review·seal·activation으로
+catalog·detail·history·regions·markets 5개 SSR route를 검증했다. SSR 처리 중 source call은 0이고
+각 화면에 저장된 제공값이 존재함을 확인했다.
+
+모든 write는 outer transaction으로 rollback했고 root table이 다시 비었는지 확인한 뒤 exact 전용
+DB를 삭제했다. source row·response body·URL query·credential·사용자 입력은 log, fixture, receipt나
+artifact에 남기지 않았고 고정 count receipt만 출력했다. 이 결과는 key·provider schema·adapter·
+persistence·SSR 연결의 실제 smoke evidence다. 동적으로 파생한 test mapping과 자동 approval은
+사람의 cross-source identity·권리·전체 coverage 검수, production publication·activation,
+scheduler·traffic 검증을 대신하지 않는다.

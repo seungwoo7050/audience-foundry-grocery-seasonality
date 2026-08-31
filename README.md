@@ -18,13 +18,13 @@ publication이 있을 때 선택 지역의 월별 기록, 지역별 조사 범�
 - 원격 저장소: `origin`
   (`https://github.com/seungwoo7050/audience-foundry-grocery-seasonality.git`)
 - 공개 상태: GitHub 공개 저장소·production service 미배포
-- 구현 상태: **vNext local implementation candidate**; production 미배포·미활성
+- 구현 상태: **vNext implementation candidate**; production 미배포·미활성
 - 시작 기준선: `bb0b28038243c539db2eafcfebc05144d9d59d66`
 - source path: 최근 비교 `15156063`; historical `15156060`, `15156062`, `15156065`
 
-vNext 변경은 시작 기준선 이후 local에서만 만들었고 이 문서 갱신 시점에는 `origin`으로
-push하거나 production에 배포하지 않았습니다. exact 최종 local SHA와 검증 상태는 완료
-보고서에서 고정합니다.
+vNext 변경은 시작 기준선 이후 검토 가능한 선형 commit으로 만들었습니다. exact 최종 local·
+승인된 remote SHA와 검증 상태는 완료 응답에서 고정하며, source repository push를 production
+배포나 자료 공개 활성화로 해석하지 않습니다.
 
 ## 역사적 첫 범위
 
@@ -99,6 +99,28 @@ collectstatic, production-like process와 health·public smoke를 같은 순서�
 rollback은 reverse migration 없이 최신 schema를 유지하고 검증된 이전 code·static으로
 되돌립니다. 실제 artifact packaging, bundled notice, vendor deploy·traffic·rollback CLI는
 platform을 선택한 뒤 사람이 별도로 승인하는 production checkpoint입니다.
+
+### 명시적 live source-to-SSR smoke
+
+소유자가 발급받은 local 개발 key로 네 공식 API부터 typed persistence와 공개 SSR까지의 최소
+연결을 다시 확인할 때만 다음 명령을 명시적으로 실행합니다.
+
+```sh
+make db-up
+make live-source-e2e-smoke
+```
+
+이 target은 ambient `KAMIS_API_KEY`를 거부하고 ignored owner-only `.env.local`을 process 안에서만
+읽습니다. 고정 loopback PostgreSQL의 exact 전용 DB를 새로 만든 뒤 최근·월별·지역별·시장별 API를
+각각 bounded 호출하고, test-only 자동 mapping·review·seal·activation을 거쳐 catalog·detail·history·
+regions·markets SSR을 확인합니다. 공개 SSR 중 source 재호출이 있으면 실패합니다. 모든 write는
+outer transaction에서 rollback하고 target이 새로 만든 DB만 삭제하며, 출력은 값·query·원응답이
+없는 고정 count receipt입니다.
+
+실제 provider 호출이므로 이 target은 `make check`와 `make production-check`에 포함하지 않습니다.
+성공은 현재 key·schema·최소 연결의 smoke evidence일 뿐 사람의 mapping·권리·전체 coverage 검수,
+production publication 승인이나 scheduler 검증을 대신하지 않습니다. 실패 역시 숨기지 않고 live
+evidence로 취급합니다. 세부 안전 경계는 [운영 런북](docs/OPERATIONS-RUNBOOK.md)에 있습니다.
 
 ## 계약·증거 문서
 

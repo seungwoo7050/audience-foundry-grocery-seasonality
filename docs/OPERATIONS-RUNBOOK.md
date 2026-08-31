@@ -449,6 +449,45 @@ historical traffic 공개를 중단한다.
 production scheduler 성공을 뜻하지 않는다. 경계 전에 새 실패 attempt가 있거나 경계를 넘으면
 freshness contract에 따라 다시 확인하고 alert를 판정한다.
 
+## 명시적 local live source-to-SSR smoke
+
+개발 key가 실제 네 source adapter, typed persistence와 공개 SSR까지 이어지는지만 다시 확인할 때
+repository root에서 다음 opt-in target을 실행한다.
+
+```sh
+make db-up
+make live-source-e2e-smoke
+```
+
+target은 다음 조건을 모두 실패 폐쇄한다.
+
+- ambient `KAMIS_API_KEY` 부재와 `LIVE_SOURCE_E2E_SMOKE=1`
+- `DEBUG=True`, Admin·QA preview·production control plane 비활성
+- `127.0.0.1:55434`의 exact `grocery_vnext_live_api_smoke` PostgreSQL database
+- 실행 전 publication·source·audit root table이 모두 비어 있음
+
+Make recipe가 exact DB를 새로 만들지 못하면 기존 DB를 사용하거나 삭제하지 않는다. guard를 통과한
+뒤 ignored owner-only `.env.local`은 loader가 process 안에서만 읽고 값·길이·일부·encoding을
+출력하지 않는다. 최근, 월별, 지역별, 시장별 source를 각각 bounded 호출해 normal parser와 typed
+model로 저장한다. live response에서 series·region을 동적으로 고르고 local test-only mapping과
+review·seal·activation을 만든 뒤 catalog·detail·history·regions·markets를 읽는다. SSR 구간에서는
+source client를 호출하면 즉시 실패하도록 막는다.
+
+전체 data flow는 outer transaction 안에서 실행하고 성공·실패와 무관하게 rollback한다. 성공 뒤
+root table이 다시 비었는지 확인하고 recipe가 만든 exact DB만 trap에서 삭제한다. stdout은 status와
+row·route count, SSR source-call count, raw-response-retention 여부로 제한한 고정 receipt다. URL,
+query, 사용자 입력, source row, response body, credential 또는 traceback을 artifact로 남기지 않는다.
+
+2026-08-31(KST) 실제 실행은 최근 10행, 월별 36행, 지역별 1행, 시장별 9행과 공개 SSR 5 route를
+통과했고 SSR source call은 0이었다. 종료 후 root data 부재와 전용 DB 삭제를 별도로 확인했다.
+provider 응답은 바뀔 수 있으므로 이 count는 fixture 계약이나 장기 coverage 보장이 아니다.
+
+이 smoke의 자동 mapping·review·seal·activation은 disposable test database에만 존재하며 사람의
+cross-source identity·mapping·rights·coverage 검수, production actor/MFA, scheduler, 첫 production
+publication·activation을 대신하지 않는다. 따라서 일반 `make check`, `make production-check`, CI,
+배포 또는 production worker에 자동 연결하지 않는다. 실패는 key·provider·schema·adapter 경계의
+live evidence로 기록하고 fixture 성공으로 덮지 않는다.
+
 ## 수집부터 공개까지
 
 ### 역할 분리와 자동화 한계

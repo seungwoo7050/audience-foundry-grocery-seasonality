@@ -119,8 +119,13 @@ def transition_historical_publication(
             .filter(pk=target_revision_id)
             .first()
         )
-        if target is None or not _target_is_currently_approved(target):
-            raise ValidationError("Historical publication target is not a current sealed bundle.")
+        if target is None or target.sealed_at is None:
+            raise ValidationError("Historical publication target is not a sealed bundle.")
+        if (
+            operation == HistoricalRetailPublicationActivation.Operation.ACTIVATE
+            and not _target_is_currently_approved(target)
+        ):
+            raise ValidationError("Historical activation requires current reviewed approvals.")
         if (
             operation == HistoricalRetailPublicationActivation.Operation.ROLLBACK
             and not HistoricalRetailPublicationActivation.objects.filter(

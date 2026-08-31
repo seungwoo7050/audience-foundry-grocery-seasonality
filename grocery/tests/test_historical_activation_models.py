@@ -15,6 +15,8 @@ from grocery.historical_activations import (
     transition_historical_publication,
 )
 from grocery.historical_publications import seal_historical_publication
+from grocery.historical_review_models import HistoricalCollectionReviewDecision
+from grocery.historical_reviews import record_historical_review_decision
 from grocery.tests.historical_bundle_factory import create_reviewed_historical_bundle
 
 
@@ -80,6 +82,54 @@ def test_historical_activation_is_authorized_idempotent_cas(transactional_db: No
         orphan.save()
     assert HistoricalRetailPublicationActivation.objects.count() == 1
 
+    transition_historical_publication(
+        operation_id=uuid.uuid4(),
+        actor=publisher,
+        operation=HistoricalRetailPublicationActivation.Operation.WITHDRAW,
+        target_revision_id=None,
+        expected_current_revision_id=revision.id,
+        expected_version=1,
+        reason_code="WITHDRAW_FOR_REVIEW_UPDATE",
+        acceptance_evidence_sha256="5" * 64,
+    )
+    monthly_review = bundle.monthly_review
+    record_historical_review_decision(
+        decision_id=uuid.uuid4(),
+        actor=monthly_review.reviewer,
+        collection_id=monthly_review.collection_id,
+        decision=HistoricalCollectionReviewDecision.Decision.APPROVE,
+        reconciliation_report_sha256="6" * 64,
+        acceptance_evidence_sha256="7" * 64,
+        reason_code="REVIEW_REFRESHED",
+        approved_result_sha256=monthly_review.approved_result_sha256,
+        approved_partition_manifest_sha256=(
+            monthly_review.approved_partition_manifest_sha256
+        ),
+        supersedes_id=monthly_review.id,
+    )
+    with pytest.raises(ValidationError, match="current reviewed"):
+        transition_historical_publication(
+            operation_id=uuid.uuid4(),
+            actor=publisher,
+            operation=HistoricalRetailPublicationActivation.Operation.ACTIVATE,
+            target_revision_id=revision.id,
+            expected_current_revision_id=None,
+            expected_version=2,
+            reason_code="REACTIVATE_SUPERSEDED",
+            acceptance_evidence_sha256="8" * 64,
+        )
+    rolled_back, rolled_back_created = transition_historical_publication(
+        operation_id=uuid.uuid4(),
+        actor=publisher,
+        operation=HistoricalRetailPublicationActivation.Operation.ROLLBACK,
+        target_revision_id=revision.id,
+        expected_current_revision_id=None,
+        expected_version=2,
+        reason_code="LAST_KNOWN_GOOD_ROLLBACK",
+        acceptance_evidence_sha256="9" * 64,
+    )
+    assert rolled_back_created is True and rolled_back.sequence == 3
+
     outsider = get_user_model().objects.create_user(username="historical-outsider")
     with pytest.raises(PermissionDenied):
         transition_historical_publication(
@@ -88,12 +138,12 @@ def test_historical_activation_is_authorized_idempotent_cas(transactional_db: No
             operation=HistoricalRetailPublicationActivation.Operation.WITHDRAW,
             target_revision_id=None,
             expected_current_revision_id=revision.id,
-            expected_version=1,
+            expected_version=3,
             reason_code="UNAUTHORIZED",
             acceptance_evidence_sha256="5" * 64,
         )
 
     with pytest.raises(DatabaseError), transaction.atomic():
         HistoricalRetailPublicationChannel.objects.filter(pk=channel.pk).update(
-            version=2,
+            version=4,
         )

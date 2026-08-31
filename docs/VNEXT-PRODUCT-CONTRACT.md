@@ -1,8 +1,8 @@
 # vNext 제품·source 계약
 
 승인일은 2026-08-31(KST)다. 이 문서는 제품 소유자가 승인한 첫 MVP 이후의
-소비자 확장 계약이며, 실제 source gate가 통과하기 전에는 source-dependent schema나
-adapter 구현을 허용하지 않는다.
+소비자 확장 계약이다. 세 신규 API의 최소 live interface gate는 같은 날 통과했으며
+비민감 증거와 아직 열려 있는 stop 조건은 `docs/VNEXT-SOURCE-GATE.md`에 고정한다.
 
 ## 제품 목표
 

@@ -1,9 +1,11 @@
 import hashlib
+import uuid
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from django.utils import timezone
 
 from grocery.historical_collection_models import (
@@ -19,6 +21,7 @@ from grocery.historical_identity_models import (
 )
 from grocery.historical_monthly_models import MonthlyRegionalRetailPrice
 from grocery.historical_review_models import HistoricalCollectionReviewDecision
+from grocery.historical_reviews import record_historical_review_decision
 from grocery.models import ParseRun, SourceConfiguration
 from grocery.tests.historical_test_support import create_scoped_artifact
 from grocery.tests.test_acquisition_models import create_source_configuration
@@ -105,16 +108,18 @@ def _approve(
     collection: HistoricalSourceCollection,
     reviewer: object,
 ) -> HistoricalCollectionReviewDecision:
-    return HistoricalCollectionReviewDecision.objects.create(
-        collection=collection,
+    decision, _created = record_historical_review_decision(
+        decision_id=uuid.uuid4(),
+        actor=reviewer,
+        collection_id=collection.id,
         decision=HistoricalCollectionReviewDecision.Decision.APPROVE,
-        reviewer=reviewer,
         reconciliation_report_sha256="d" * 64,
         acceptance_evidence_sha256="e" * 64,
         reason_code="RECONCILED",
         approved_result_sha256=collection.result_sha256,
         approved_partition_manifest_sha256=collection.partition_manifest_sha256,
     )
+    return decision
 
 
 def create_reviewed_historical_bundle() -> ReviewedHistoricalBundle:
@@ -208,6 +213,9 @@ def create_reviewed_historical_bundle() -> ReviewedHistoricalBundle:
     for part, count in ((monthly_part, 36), (regional_part, 1), (market_part, 1)):
         _complete(part, count)
     reviewer = get_user_model().objects.create_user(username="bundle-reviewer")
+    reviewer.user_permissions.add(
+        Permission.objects.get(codename="review_historical_collection")
+    )
     return ReviewedHistoricalBundle(
         monthly_review=_approve(monthly_part.collection, reviewer),
         regional_review=_approve(regional_part.collection, reviewer),

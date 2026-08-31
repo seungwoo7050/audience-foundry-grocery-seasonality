@@ -1,10 +1,14 @@
+import uuid
+
 import pytest
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from grocery.historical_collection_models import HistoricalSourceCollection
 from grocery.historical_review_models import HistoricalCollectionReviewDecision
+from grocery.historical_reviews import record_historical_review_decision
 from grocery.models import SourceConfiguration
 from grocery.tests.test_acquisition_models import create_source_configuration
 
@@ -28,10 +32,12 @@ def test_approval_is_bound_to_the_validated_collection_hashes(db: None) -> None:
         completed_at=timezone.now(),
     )
     actor = get_user_model().objects.create_user(username="historical-reviewer")
+    actor.user_permissions.add(Permission.objects.get(codename="review_historical_collection"))
     values = {
-        "collection": collection,
+        "decision_id": uuid.uuid4(),
+        "actor": actor,
+        "collection_id": collection.id,
         "decision": HistoricalCollectionReviewDecision.Decision.APPROVE,
-        "reviewer": actor,
         "reconciliation_report_sha256": "d" * 64,
         "acceptance_evidence_sha256": "e" * 64,
         "reason_code": "RECONCILED",
@@ -39,9 +45,11 @@ def test_approval_is_bound_to_the_validated_collection_hashes(db: None) -> None:
         "approved_partition_manifest_sha256": collection.partition_manifest_sha256,
     }
 
-    decision = HistoricalCollectionReviewDecision.objects.create(**values)
+    decision, created = record_historical_review_decision(**values)
+    assert created is True
     assert decision.collection_id == collection.id
 
+    values["decision_id"] = uuid.uuid4()
     values["approved_result_sha256"] = "f" * 64
     with pytest.raises(ValidationError, match="hashes"):
-        HistoricalCollectionReviewDecision.objects.create(**values)
+        record_historical_review_decision(**values)

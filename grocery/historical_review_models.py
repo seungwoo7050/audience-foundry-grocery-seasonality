@@ -60,6 +60,8 @@ class HistoricalCollectionReviewDecision(models.Model):
         blank=True,
     )
 
+    _review_write = False
+
     class Meta:
         permissions = [("review_historical_collection", "Can review historical collections")]
         constraints = [
@@ -106,8 +108,8 @@ class HistoricalCollectionReviewDecision(models.Model):
         return f"{self.collection_id}:{self.decision}:{self.id}"
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        if not self._state.adding:
-            raise ValidationError("Historical review decisions are append-only.")
+        if not self._state.adding or not self._review_write:
+            raise ValidationError("Historical review decisions use the review service.")
         self.full_clean()
         super().save(*args, **kwargs)
 

@@ -1,7 +1,9 @@
 import uuid
 
+import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
+from django.db import DatabaseError, transaction
 from django.utils import timezone
 
 from grocery.historical_collection_models import HistoricalSourceCollection
@@ -47,3 +49,26 @@ def test_authorized_review_uuid_replay_is_idempotent(db: None) -> None:
     replay, replay_created = record_historical_review_decision(**values)
 
     assert created is True and replay_created is False and replay.id == decision.id
+
+    with pytest.raises(DatabaseError), transaction.atomic():
+        HistoricalCollectionReviewDecision.objects.filter(pk=decision.pk).update(
+            reason_code="FORGED"
+        )
+    with pytest.raises(DatabaseError), transaction.atomic():
+        HistoricalCollectionReviewDecision.objects.bulk_create(
+            [
+                HistoricalCollectionReviewDecision(
+                    collection=collection,
+                    decision=HistoricalCollectionReviewDecision.Decision.APPROVE,
+                    reviewer=actor,
+                    reconciliation_report_sha256="d" * 64,
+                    acceptance_evidence_sha256="e" * 64,
+                    reason_code="FORGED",
+                    approved_result_sha256=collection.result_sha256,
+                    approved_partition_manifest_sha256=(
+                        collection.partition_manifest_sha256
+                    ),
+                    supersedes=decision,
+                )
+            ]
+        )

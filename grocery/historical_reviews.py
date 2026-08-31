@@ -6,10 +6,19 @@ import uuid
 from typing import Any
 
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import connection, transaction
 
 from grocery.historical_collection_models import HistoricalSourceCollection
 from grocery.historical_review_models import HistoricalCollectionReviewDecision
+
+
+def _set_historical_review_token(decision_id: uuid.UUID | None) -> None:
+    token = "" if decision_id is None else str(decision_id)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT set_config('grocery.historical_review_id', %s, true)",
+            [token],
+        )
 
 
 @transaction.atomic
@@ -64,5 +73,10 @@ def record_historical_review_decision(
         )
     )
     candidate = HistoricalCollectionReviewDecision(id=decision_id, **fields)
-    candidate.save()
+    candidate._review_write = True
+    _set_historical_review_token(decision_id)
+    try:
+        candidate.save()
+    finally:
+        _set_historical_review_token(None)
     return candidate, True

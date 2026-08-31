@@ -2701,3 +2701,7 @@ def build_source_artifact(attempt_id: uuid.UUID) -> tuple[SourceArtifact, bool]:
         attempt.artifact = artifact
         attempt.save(update_fields=["artifact"])
     return artifact, created
+
+
+# Load separately bounded vNext models into Django's app registry.
+from grocery import historical_identity_models as _historical_identity_models  # noqa: E402,F401

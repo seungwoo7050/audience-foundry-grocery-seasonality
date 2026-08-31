@@ -1,4 +1,5 @@
 import uuid
+from typing import Any, TypedDict
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -18,6 +19,17 @@ from grocery.historical_publications import seal_historical_publication
 from grocery.historical_review_models import HistoricalCollectionReviewDecision
 from grocery.historical_reviews import record_historical_review_decision
 from grocery.tests.historical_bundle_factory import create_reviewed_historical_bundle
+
+
+class _TransitionArguments(TypedDict):
+    operation_id: uuid.UUID
+    actor: Any
+    operation: str
+    target_revision_id: uuid.UUID | None
+    expected_current_revision_id: uuid.UUID | None
+    expected_version: int
+    reason_code: str
+    acceptance_evidence_sha256: str
 
 
 def test_historical_channel_is_fixed_and_rejects_direct_model_transition(db: None) -> None:
@@ -41,7 +53,7 @@ def test_historical_activation_is_authorized_idempotent_cas(transactional_db: No
     publisher.user_permissions.add(
         Permission.objects.get(codename="publish_historical_publication")
     )
-    values = {
+    values: _TransitionArguments = {
         "operation_id": uuid.uuid4(),
         "actor": publisher,
         "operation": HistoricalRetailPublicationActivation.Operation.ACTIVATE,
@@ -60,7 +72,7 @@ def test_historical_activation_is_authorized_idempotent_cas(transactional_db: No
     assert (channel.version, channel.current_revision_id) == (1, revision.id)
     assert HistoricalRetailPublicationActivation.objects.count() == 1
 
-    stale_values = dict(values, operation_id=uuid.uuid4())
+    stale_values: _TransitionArguments = {**values, "operation_id": uuid.uuid4()}
     with pytest.raises(ValidationError, match="stale"):
         transition_historical_publication(**stale_values)
     assert HistoricalRetailPublicationActivation.objects.count() == 1

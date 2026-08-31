@@ -1,4 +1,5 @@
 import uuid
+from typing import TypedDict
 
 import pytest
 from django.db import DatabaseError, transaction
@@ -8,9 +9,16 @@ from grocery.historical_publications import seal_historical_publication
 from grocery.tests.historical_bundle_factory import create_reviewed_historical_bundle
 
 
+class _SealArguments(TypedDict):
+    monthly_review_id: uuid.UUID
+    regional_review_id: uuid.UUID
+    market_review_id: uuid.UUID
+    compatibility_report_sha256: str
+
+
 def test_seal_binds_complete_three_source_fact_set_and_replays(db: None) -> None:
     bundle = create_reviewed_historical_bundle()
-    values = {
+    values: _SealArguments = {
         "monthly_review_id": bundle.monthly_review.id,
         "regional_review_id": bundle.regional_review.id,
         "market_review_id": bundle.market_review.id,

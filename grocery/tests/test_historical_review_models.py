@@ -1,4 +1,5 @@
 import uuid
+from typing import Any, TypedDict
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -11,6 +12,18 @@ from grocery.historical_review_models import HistoricalCollectionReviewDecision
 from grocery.historical_reviews import record_historical_review_decision
 from grocery.models import SourceConfiguration
 from grocery.tests.test_acquisition_models import create_source_configuration
+
+
+class _ReviewArguments(TypedDict):
+    decision_id: uuid.UUID
+    actor: Any
+    collection_id: uuid.UUID
+    decision: str
+    reconciliation_report_sha256: str
+    acceptance_evidence_sha256: str
+    reason_code: str
+    approved_result_sha256: str
+    approved_partition_manifest_sha256: str
 
 
 def test_approval_is_bound_to_the_validated_collection_hashes(db: None) -> None:
@@ -33,7 +46,7 @@ def test_approval_is_bound_to_the_validated_collection_hashes(db: None) -> None:
     )
     actor = get_user_model().objects.create_user(username="historical-reviewer")
     actor.user_permissions.add(Permission.objects.get(codename="review_historical_collection"))
-    values = {
+    values: _ReviewArguments = {
         "decision_id": uuid.uuid4(),
         "actor": actor,
         "collection_id": collection.id,

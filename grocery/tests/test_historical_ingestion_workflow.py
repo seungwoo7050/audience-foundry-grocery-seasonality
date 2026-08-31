@@ -1,12 +1,13 @@
 import hashlib
 import json
 import uuid
+from typing import cast
 
 from grocery.historical_ingestion_workflow import ingest_historical_collection
 from grocery.historical_publication_models import HistoricalRetailPublicationRevision
 from grocery.historical_review_models import HistoricalCollectionReviewDecision
 from grocery.models import SourceConfiguration
-from grocery.source.client import KamisFetchResult, PageReceipt
+from grocery.source.client import JsonObject, KamisFetchResult, PageReceipt
 from grocery.source.historical_client import prepare_historical_request
 from grocery.source.historical_contract import HistoricalDataset, HistoricalPriceQuery
 from grocery.tests.historical_bundle_factory import create_reviewed_historical_bundle
@@ -15,7 +16,7 @@ from grocery.tests.test_acquisition_models import create_source_configuration
 
 
 class _SyntheticClient:
-    def __init__(self, row: dict[str, str]) -> None:
+    def __init__(self, row: JsonObject) -> None:
         self.row = row
         self.calls = 0
 
@@ -49,7 +50,7 @@ def test_workflow_uses_synthetic_transport_and_stops_before_review(db: None) -> 
         dataset_id="15156060",
         publication_mode=SourceConfiguration.PublicationMode.HISTORICAL_MONTHLY,
     )
-    row = monthly_row()
+    row = cast(JsonObject, monthly_row())
     row.update(exmn_ym="202512", sgg_cd=bundle.region.region_code, sgg_nm=bundle.region.region_name)
     client = _SyntheticClient(row)
     query = HistoricalPriceQuery(start="202512", end="202512", category_code="200", item_code="212")

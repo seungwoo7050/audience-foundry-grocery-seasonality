@@ -1,0 +1,19 @@
+{
+  "axeSource": ".cache/axe/axe.min.js",
+  "axeVersion": "4.13.0",
+  "fixtureKind": "live-public-api-normalized-test-publication",
+  "outputDirectory": "output/playwright/vnext-redesign-v2",
+  "scanCount": 9,
+  "scans": [
+    {"name": "catalog-ready", "passes": 23, "reviewedContrastNodes": 12, "viewport": "390x844"},
+    {"name": "detail-ready", "passes": 21, "reviewedContrastNodes": 4, "viewport": "390x844"},
+    {"name": "history-ready", "passes": 26, "reviewedContrastNodes": 7, "viewport": "390x844"},
+    {"name": "regions-ready", "passes": 25, "reviewedContrastNodes": 2, "viewport": "390x844"},
+    {"name": "markets-ready", "passes": 25, "reviewedContrastNodes": 1, "viewport": "390x844"},
+    {"name": "selection-ready", "passes": 25, "reviewedContrastNodes": 3, "viewport": "390x844"},
+    {"name": "catalog-validation", "passes": 27, "reviewedContrastNodes": 1, "viewport": "390x844"},
+    {"name": "catalog-server-error", "passes": 19, "reviewedContrastNodes": 0, "viewport": "390x844"},
+    {"name": "generic-not-found", "passes": 16, "reviewedContrastNodes": 0, "viewport": "390x844"}
+  ],
+  "viewport": "390x844"
+}

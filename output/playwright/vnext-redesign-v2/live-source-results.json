@@ -1,0 +1,11 @@
+{
+  "fixtureKind": "live-public-api-normalized-test-publication",
+  "marketRows": 9,
+  "monthlyRows": 36,
+  "rawResponseRetained": false,
+  "recentRows": 10,
+  "regionalRows": 1,
+  "sourceCallsDuringSsr": 0,
+  "ssrRoutes": 5,
+  "status": "PASS"
+}

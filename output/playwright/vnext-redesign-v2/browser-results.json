@@ -1,0 +1,30 @@
+{
+  "candidateCommit": "d97888885e8a2e5b8db88005ddf0bf3a336dcdc6",
+  "externalRequests": 0,
+  "fixtureKind": "live-public-api-normalized-test-publication",
+  "generatedAt": "2026-08-31T07:50:19Z",
+  "outputDirectory": "output/playwright/vnext-redesign-v2",
+  "overflowOnlyViewports": [
+    "360x800",
+    "768x1024"
+  ],
+  "readyFlowViewports": [
+    "390x844",
+    "1440x900"
+  ],
+  "screenshotCount": 8,
+  "screenshotSurfaces": [
+    "catalog",
+    "detail",
+    "history",
+    "selection"
+  ],
+  "surfaces": [
+    "catalog",
+    "detail",
+    "history",
+    "regions",
+    "markets",
+    "selection"
+  ]
+}

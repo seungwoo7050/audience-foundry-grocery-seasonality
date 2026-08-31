@@ -293,9 +293,18 @@ class SourceConfiguration(models.Model):
                 name="grocery_source_schedule_mode_valid",
             ),
             models.CheckConstraint(
-                condition=Q(
-                    schedule_interval_hours__gt=0,
-                    schedule_interval_hours__lte=168,
+                condition=(
+                    Q(schedule_interval_hours__gt=0)
+                    & (
+                        Q(
+                            publication_mode="HISTORICAL_MONTHLY",
+                            schedule_interval_hours__lte=168,
+                        )
+                        | (
+                            ~Q(publication_mode="HISTORICAL_MONTHLY")
+                            & Q(schedule_interval_hours__lte=24)
+                        )
+                    )
                 ),
                 name="grocery_source_schedule_interval_valid",
             ),

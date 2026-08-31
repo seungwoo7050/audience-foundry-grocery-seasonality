@@ -232,11 +232,21 @@ validate_hsts_configuration(
     preload=SECURE_HSTS_PRELOAD,
 )
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_REFERRER_POLICY = "same-origin"
+SECURE_REFERRER_POLICY = "no-referrer"
 X_FRAME_OPTIONS = "DENY"
 
 KAMIS_CONFIRMATION_MAX_AGE_HOURS = env_positive_int(
     "KAMIS_CONFIRMATION_MAX_AGE_HOURS",
+    36,
+    maximum=168,
+)
+KAMIS_HISTORICAL_MONTHLY_MAX_AGE_HOURS = env_positive_int(
+    "KAMIS_HISTORICAL_MONTHLY_MAX_AGE_HOURS",
+    192,
+    maximum=744,
+)
+KAMIS_HISTORICAL_DAILY_MAX_AGE_HOURS = env_positive_int(
+    "KAMIS_HISTORICAL_DAILY_MAX_AGE_HOURS",
     36,
     maximum=168,
 )

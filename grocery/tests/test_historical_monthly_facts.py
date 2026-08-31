@@ -56,14 +56,15 @@ def test_monthly_fact_preserves_provider_range_and_is_immutable(db: None) -> Non
         series=series,
         region=region,
         year_month="202512",
-        provider_mean=Decimal("1200"),
-        provider_low=Decimal("1000"),
-        provider_high=Decimal("1500"),
+        provider_mean=Decimal("1200.50"),
+        provider_low=Decimal("1000.25"),
+        provider_high=Decimal("1500.75"),
         source_row_sha256="d" * 64,
         source_contract_revision="15156060-v1",
     )
 
-    assert fact.provider_mean == Decimal("1200")
+    fact.refresh_from_db()
+    assert fact.provider_mean == Decimal("1200.50")
     fact.provider_mean = Decimal("1300")
     with pytest.raises(ValidationError, match="immutable"):
         fact.save()

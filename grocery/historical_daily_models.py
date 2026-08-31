@@ -18,19 +18,19 @@ from grocery.models import SHA256_PATTERN
 class DailyRegionalRetailPrice(HistoricalPriceFact):
     survey_date = models.DateField()
     provider_mean = models.DecimalField(
-        max_digits=12,
-        decimal_places=0,
-        validators=[MinValueValidator(Decimal("1"))],
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
     )
     provider_low = models.DecimalField(
-        max_digits=12,
-        decimal_places=0,
-        validators=[MinValueValidator(Decimal("1"))],
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
     )
     provider_high = models.DecimalField(
-        max_digits=12,
-        decimal_places=0,
-        validators=[MinValueValidator(Decimal("1"))],
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
     )
 
     class Meta:
@@ -68,9 +68,9 @@ class DailyMarketRetailPrice(HistoricalPriceFact):
     market = models.ForeignKey(RetailMarketKey, on_delete=models.PROTECT)
     survey_date = models.DateField()
     provider_price = models.DecimalField(
-        max_digits=12,
-        decimal_places=0,
-        validators=[MinValueValidator(Decimal("1"))],
+        max_digits=14,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
     )
     source_recorded_at = models.DateTimeField(null=True, blank=True)
 

@@ -1,0 +1,16 @@
+{% if validation_errors %}
+  <div class="form-error" role="alert" aria-labelledby="validation-title">
+    <span class="form-error__symbol" aria-hidden="true">!</span>
+    <div class="form-error__content">
+      <p id="validation-title" class="form-error__title"><strong>입력 내용을 확인하세요</strong></p>
+      <ul>
+        {% for error in validation_errors %}
+          <li>
+            {{ error.message }}
+            {% if error.target %}<a class="form-error__link" href="#{{ error.target }}">입력으로 이동</a>{% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+{% endif %}

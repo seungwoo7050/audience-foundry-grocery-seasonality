@@ -2708,4 +2708,7 @@ from grocery import historical_collection_models as _historical_collection_model
 from grocery import historical_daily_models as _historical_daily_models  # noqa: E402,F401
 from grocery import historical_identity_models as _historical_identity_models  # noqa: E402,F401
 from grocery import historical_monthly_models as _historical_monthly_models  # noqa: E402,F401
+from grocery import (  # noqa: E402
+    historical_publication_models as _historical_publication_models,  # noqa: F401
+)
 from grocery import historical_review_models as _historical_review_models  # noqa: E402,F401

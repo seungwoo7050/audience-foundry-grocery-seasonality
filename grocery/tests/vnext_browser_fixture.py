@@ -11,9 +11,12 @@ from decimal import Decimal
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.db import transaction
+from django.db import connection, transaction
 
-from grocery.historical_activation_models import HistoricalRetailPublicationActivation
+from grocery.historical_activation_models import (
+    HistoricalRetailPublicationActivation,
+    HistoricalRetailPublicationChannel,
+)
 from grocery.historical_activations import transition_historical_publication
 from grocery.historical_collection_models import HistoricalSourceCollection
 from grocery.historical_collections import complete_historical_collection
@@ -25,10 +28,14 @@ from grocery.historical_identity_models import (
     price_series_identity_sha256,
 )
 from grocery.historical_monthly_models import MonthlyRegionalRetailPrice
+from grocery.historical_publication_models import HistoricalRetailPublicationRevision
 from grocery.historical_publications import seal_historical_publication
 from grocery.models import (
+    PriceSeriesKey,
     PublicationActivation,
     PublicationChannel,
+    PublicationRevision,
+    SourceArtifact,
     SourceConfiguration,
     seal_recent_publication,
     transition_recent_publication,
@@ -58,7 +65,30 @@ def _require_disposable_qa() -> None:
         or getattr(settings, "QA_STATE_PREVIEWS_ENABLED", None) is not True
     ):
         raise RuntimeError("qa_fixture_environment_denied")
-    if PublicationChannel.objects.exists() or HistoricalSourceCollection.objects.exists():
+    database = connection.settings_dict
+    name = database.get("NAME")
+    host = database.get("HOST")
+    if (
+        database.get("ENGINE") != "django.db.backends.postgresql"
+        or host not in {"127.0.0.1", "localhost", "::1"}
+        or not isinstance(name, str)
+        or not name.startswith("grocery_vnext_")
+    ):
+        raise RuntimeError("qa_fixture_database_denied")
+    root_models = (
+        SourceConfiguration,
+        SourceArtifact,
+        PriceSeriesKey,
+        PublicationRevision,
+        PublicationChannel,
+        HistoricalRetailSeriesKey,
+        RetailRegionKey,
+        RetailMarketKey,
+        HistoricalSourceCollection,
+        HistoricalRetailPublicationRevision,
+        HistoricalRetailPublicationChannel,
+    )
+    if any(model.objects.exists() for model in root_models):
         raise RuntimeError("qa_fixture_database_not_empty")
 
 

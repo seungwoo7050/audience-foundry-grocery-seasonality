@@ -1,0 +1,21 @@
+{% if publication %}
+  <dl class="publication-summary" aria-label="{{ publication_label|default:'공개 자료 정보' }}">
+    <div>
+      <dt>KAMIS 자료 확인 일시</dt>
+      <dd>
+        {% if publication.checked_at_iso %}<time datetime="{{ publication.checked_at_iso }}">{% endif %}
+        {{ publication.checked_at_display }}
+        {% if publication.checked_at_iso %}</time>{% endif %}
+      </dd>
+    </div>
+    <div>
+      <dt>자료 상태</dt>
+      <dd>
+        <span class="status-text status-text--{{ publication.freshness_state|default:'current' }}">
+          <span aria-hidden="true">{% if publication.freshness_state == "stale" %}!{% else %}✓{% endif %}</span>
+          {{ publication.freshness_label }}
+        </span>
+      </dd>
+    </div>
+  </dl>
+{% endif %}

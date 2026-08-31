@@ -1,0 +1,15 @@
+{% if pagination and pagination.has_multiple_pages %}
+  <nav class="pagination" aria-label="페이지 이동">
+    <div class="pagination__previous">
+      {% if pagination.previous_url %}
+        <a href="{{ pagination.previous_url }}" rel="prev">← 이전</a>
+      {% endif %}
+    </div>
+    <p>{{ pagination.page_label }}</p>
+    <div class="pagination__next">
+      {% if pagination.next_url %}
+        <a href="{{ pagination.next_url }}" rel="next">다음 →</a>
+      {% endif %}
+    </div>
+  </nav>
+{% endif %}

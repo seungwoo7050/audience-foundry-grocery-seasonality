@@ -1,0 +1,15 @@
+{% if section_nav %}
+  <nav class="series-nav" aria-label="{{ series.item_name }} 자료 보기">
+    <ul>
+      {% for item in section_nav %}
+        <li>
+          {% if item.current %}
+            <span class="series-nav__item series-nav__item--current" aria-current="page">{{ item.label }}</span>
+          {% elif item.available and item.url %}
+            <a class="series-nav__item" href="{{ item.url }}">{{ item.label }}</a>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  </nav>
+{% endif %}

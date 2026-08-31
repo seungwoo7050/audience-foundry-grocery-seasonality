@@ -24,7 +24,7 @@
       <form class="scope-form scope-form--date" action="{{ regions_form_action|default:'' }}" method="get">
         <div class="field-group">
           <label for="regions-date">조사일 선택</label>
-          <select id="regions-date" name="date"{% if date_error %} aria-invalid="true"{% endif %}>
+          <select id="regions-date" name="date"{% if date_error %} aria-invalid="true" aria-describedby="validation-title"{% endif %}>
             {% for option in date_options %}
               <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
             {% endfor %}
@@ -38,7 +38,7 @@
     {% elif regional_rows %}
       <section class="region-section" aria-labelledby="regions-heading">
         <div class="section-heading section-heading--stacked">
-          <p class="eyebrow">{{ selected_date.label }}</p>
+          <p class="eyebrow">{% if selected_date.iso %}<time datetime="{{ selected_date.iso }}">{% endif %}{{ selected_date.label }}{% if selected_date.iso %}</time>{% endif %}</p>
           <h2 id="regions-heading">지역별 조사 범위</h2>
           <p>지역은 KAMIS 공식 지역명 순서로 표시합니다. 선의 양 끝은 최저·최고, 점은 평균입니다.</p>
         </div>
@@ -57,8 +57,8 @@
                 </dl>
                 <div class="region-row__range">
                   <dl>
-                    <div><dt>최저 조사값</dt><dd>{{ row.minimum_label }}</dd></div>
-                    <div><dt>최고 조사값</dt><dd>{{ row.maximum_label }}</dd></div>
+                    <div><dt>최저 조사값</dt><dd>{% if row.minimum_machine %}<data value="{{ row.minimum_machine }}">{% endif %}{{ row.minimum_label }}{% if row.minimum_machine %}</data>{% endif %}</dd></div>
+                    <div><dt>최고 조사값</dt><dd>{% if row.maximum_machine %}<data value="{{ row.maximum_machine }}">{% endif %}{{ row.maximum_label }}{% if row.maximum_machine %}</data>{% endif %}</dd></div>
                   </dl>
                   {% if row.meter %}
                     <svg class="range-meter" viewBox="0 0 100 8" aria-hidden="true" focusable="false">

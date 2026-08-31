@@ -24,7 +24,7 @@
       <form class="scope-form scope-form--date" action="{{ markets_form_action|default:'' }}" method="get">
         <div class="field-group">
           <label for="markets-date">조사일</label>
-          <select id="markets-date" name="date"{% if date_error %} aria-invalid="true"{% endif %}>
+          <select id="markets-date" name="date"{% if date_error %} aria-invalid="true" aria-describedby="validation-title"{% endif %}>
             {% for option in date_options %}
               <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
             {% endfor %}
@@ -39,12 +39,12 @@
       <section class="market-section" aria-labelledby="markets-heading">
         <div class="section-heading">
           <div>
-            <p class="eyebrow">{{ selected_date.label }}</p>
+            <p class="eyebrow">{% if selected_date.iso %}<time datetime="{{ selected_date.iso }}">{% endif %}{{ selected_date.label }}{% if selected_date.iso %}</time>{% endif %}</p>
             <h2 id="markets-heading">시장별 조사값</h2>
           </div>
           {% if result_count_label %}<p class="result-count">{{ result_count_label }}</p>{% endif %}
         </div>
-        <p class="section-note">시장명은 KAMIS 공식 이름 순서로 표시합니다. 각 값은 시장별 관측이며 지역 평균이 아닙니다.</p>
+        <p class="section-note">시장명은 KAMIS 공식 이름 순서로 표시합니다. 각 값은 개별 시장 조사값이며 지역 평균이 아닙니다.</p>
 
         <div class="market-ledger">
           <div class="market-ledger__head" aria-hidden="true">

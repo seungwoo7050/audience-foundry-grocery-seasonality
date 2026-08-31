@@ -86,13 +86,15 @@ def test_region_and_market_pages_keep_provider_facts_distinct() -> None:
     regions.update(
         {
             "date_options": [{"value": "2026-08-29", "label": "2026년 8월 29일", "selected": True}],
-            "selected_date": {"label": "2026년 8월 29일"},
+            "selected_date": {"iso": "2026-08-29", "label": "2026년 8월 29일"},
             "regional_rows": [
                 {
                     "region_label": "서울",
                     "mean_machine": "8000",
                     "mean_label": "8,000원",
+                    "minimum_machine": "7000",
                     "minimum_label": "7,000원",
+                    "maximum_machine": "9000",
                     "maximum_label": "9,000원",
                     "meter": {"minimum_x": "20", "maximum_x": "80", "mean_x": "50"},
                     "markets_url": "/markets/",
@@ -105,7 +107,7 @@ def test_region_and_market_pages_keep_provider_facts_distinct() -> None:
         {
             "regions_url": "/regions/",
             "selected_region": {"label": "서울"},
-            "selected_date": {"label": "2026년 8월 29일"},
+            "selected_date": {"iso": "2026-08-29", "label": "2026년 8월 29일"},
             "date_options": [{"value": "2026-08-29", "label": "2026년 8월 29일", "selected": True}],
             "market_rows": [
                 {
@@ -124,7 +126,7 @@ def test_region_and_market_pages_keep_provider_facts_distinct() -> None:
 
     assert 'x1="20"' in region_html and 'cx="50"' in region_html
     assert "시장별 값 보기" in region_html
-    assert "각 값은 시장별 관측이며 지역 평균이 아닙니다." in market_html
+    assert "각 값은 개별 시장 조사값이며 지역 평균이 아닙니다." in market_html
     assert "시장별 소매 조사값입니다" in market_html
 
 

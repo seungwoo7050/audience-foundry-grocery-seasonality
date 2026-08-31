@@ -22,7 +22,7 @@ class HistoricalDataset(StrEnum):
     MARKET = "15156065"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class HistoricalPriceQuery:
     """A bounded historical source slice; values are never retained in errors."""
 
@@ -106,7 +106,7 @@ class HistoricalContractError(ValueError):
         super().__init__(code)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, repr=False)
 class ValidatedHistoricalQuery:
     """Exact condition names and values after contract validation."""
 
@@ -115,6 +115,10 @@ class ValidatedHistoricalQuery:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "conditions", MappingProxyType(dict(self.conditions)))
+
+    def __repr__(self) -> str:
+        names = ",".join(sorted(self.conditions))
+        return f"ValidatedHistoricalQuery(dataset={self.dataset.value}, condition_names=[{names}])"
 
 
 def validate_historical_query(

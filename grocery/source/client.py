@@ -262,6 +262,7 @@ class KamisFetchResult:
     page_receipts: tuple[PageReceipt, ...]
     ordered_manifest_sha256: str
     call_count: int
+    request_scope_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -331,6 +332,7 @@ class KamisHttpClient:
                 page_size=size,
             ),
             request_shape=REDACTED_REQUEST_SHAPE,
+            request_scope_sha256=None,
         )
 
     def fetch_historical_prices(
@@ -360,6 +362,7 @@ class KamisHttpClient:
             page_size=page_size,
             request_builder=request_builder,
             request_shape=prepared.request_shape,
+            request_scope_sha256=prepared.scope_sha256,
         )
 
     def _fetch_prices(
@@ -369,6 +372,7 @@ class KamisHttpClient:
         page_size: int,
         request_builder: RequestBuilder,
         request_shape: str,
+        request_scope_sha256: str | None,
     ) -> KamisFetchResult:
         _validate_page_size(page_size)
         budget = _CallBudget()
@@ -434,6 +438,7 @@ class KamisHttpClient:
             page_receipts=frozen_receipts,
             ordered_manifest_sha256=_ordered_manifest_sha256(frozen_receipts),
             call_count=budget.count,
+            request_scope_sha256=request_scope_sha256,
         )
 
     def _fetch_page(

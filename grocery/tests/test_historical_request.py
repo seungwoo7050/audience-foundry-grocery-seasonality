@@ -99,6 +99,24 @@ def test_approved_endpoint_and_query_allowlist_are_exact(
     }
     assert "selectable" not in actual_endpoint.query
     assert is_safe_historical_request_shape(prepared.request_shape)
+    assert len(prepared.scope_sha256) == 64
     assert "synthetic" not in prepared.request_shape
     assert query.start not in prepared.request_shape
+    assert query.start not in repr(prepared)
+    assert query.region_code is None or query.region_code not in repr(prepared)
 
+
+def test_scope_hash_is_stable_and_changes_with_validated_scope() -> None:
+    base = HistoricalPriceQuery(
+        start="20260801", end="20260831", category_code="200", region_code="11000"
+    )
+    changed = HistoricalPriceQuery(
+        start="20260802", end="20260831", category_code="200", region_code="11000"
+    )
+
+    first = prepare_historical_request(HistoricalDataset.REGIONAL, base)
+    replay = prepare_historical_request(HistoricalDataset.REGIONAL, base)
+    different = prepare_historical_request(HistoricalDataset.REGIONAL, changed)
+
+    assert first.scope_sha256 == replay.scope_sha256
+    assert first.scope_sha256 != different.scope_sha256

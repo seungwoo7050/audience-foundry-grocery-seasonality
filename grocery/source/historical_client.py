@@ -6,7 +6,9 @@ retry, pagination, byte limits, exact envelope decoding, and raw-free receipts.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+import json
+from dataclasses import dataclass, field
 from urllib.parse import urlencode
 from urllib.request import Request
 
@@ -27,8 +29,9 @@ _COMMON_REDACTED_NAMES = frozenset({"numOfRows", "pageNo", "returnType"})
 class PreparedHistoricalRequest:
     """A validated condition set plus a value-free operational request shape."""
 
-    query: ValidatedHistoricalQuery
+    query: ValidatedHistoricalQuery = field(repr=False)
     request_shape: str
+    scope_sha256: str
 
     def build(self, normalized_key: str, page_number: int, page_size: int) -> Request:
         contract = HISTORICAL_ENDPOINT_CONTRACTS[self.query.dataset]
@@ -65,7 +68,21 @@ def prepare_historical_request(
     names = sorted(_COMMON_REDACTED_NAMES | condition_names)
     names.append("serviceKey:<redacted>")
     request_shape = f"GET {contract.path} parameters=[{','.join(names)}]"
-    return PreparedHistoricalRequest(query=validated, request_shape=request_shape)
+    scope_sha256 = hashlib.sha256(
+        json.dumps(
+            {
+                "conditions": sorted(validated.conditions.items()),
+                "dataset": validated.dataset.value,
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+    ).hexdigest()
+    return PreparedHistoricalRequest(
+        query=validated,
+        request_shape=request_shape,
+        scope_sha256=scope_sha256,
+    )
 
 
 def is_safe_historical_request_shape(value: str) -> bool:

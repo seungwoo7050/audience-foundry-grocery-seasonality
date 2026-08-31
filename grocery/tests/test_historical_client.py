@@ -10,6 +10,7 @@ from urllib.request import Request
 import pytest
 
 from grocery.source.client import JsonObject, KamisHttpClient, KamisTransportError
+from grocery.source.historical_client import prepare_historical_request
 from grocery.source.historical_contract import HistoricalDataset, HistoricalPriceQuery
 
 
@@ -110,6 +111,9 @@ def test_historical_fetch_reuses_bounded_ordered_pagination() -> None:
     assert [row["synthetic"] for row in result.rows] == ["first", "second"]
     assert [receipt.requested_page_number for receipt in result.page_receipts] == [1, 2]
     assert result.call_count == 2
+    assert result.request_scope_sha256 == prepare_historical_request(
+        HistoricalDataset.REGIONAL, _regional_query()
+    ).scope_sha256
 
 
 def test_invalid_query_is_translated_before_any_request() -> None:

@@ -127,12 +127,12 @@ def parse_regional_price_rows(
 
 
 def _parse_row(validator: HistoricalRowValidator) -> ParsedRegionalPriceRow:
-    raw_min = validator.positive_decimal("exmn_dd_min_prc")
-    raw_average = validator.positive_decimal("exmn_dd_avg_prc")
-    raw_max = validator.positive_decimal("exmn_dd_max_prc")
-    converted_min = validator.positive_decimal("exmn_dd_cnvs_min_prc")
-    converted_average = validator.positive_decimal("exmn_dd_cnvs_avg_prc")
-    converted_max = validator.positive_decimal("exmn_dd_cnvs_max_prc")
+    raw_min = validator.positive_price("exmn_dd_min_prc")
+    raw_average = validator.positive_price("exmn_dd_avg_prc")
+    raw_max = validator.positive_price("exmn_dd_max_prc")
+    converted_min = validator.positive_price("exmn_dd_cnvs_min_prc")
+    converted_average = validator.positive_price("exmn_dd_cnvs_avg_prc")
+    converted_max = validator.positive_price("exmn_dd_cnvs_max_prc")
     require_price_range(
         raw_min,
         raw_average,

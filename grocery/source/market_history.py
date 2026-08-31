@@ -132,8 +132,8 @@ def _parse_row(validator: HistoricalRowValidator) -> ParsedMarketPriceRow:
         region=region,
         market=validator.market(region),
         source_effective_date=validator.day(),
-        raw_observed_price=validator.positive_decimal("exmn_dd_prc"),
-        converted_observed_price=validator.positive_decimal("exmn_dd_cnvs_prc"),
+        raw_observed_price=validator.positive_price("exmn_dd_prc"),
+        converted_observed_price=validator.positive_price("exmn_dd_cnvs_prc"),
         source_recorded_at_raw=validator.text("orgnl_reg_dt", maximum=64),
         source_row_hash=canonical_hash(validator.row),
     )

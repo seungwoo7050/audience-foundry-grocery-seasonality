@@ -20,6 +20,7 @@ from grocery.source.kamis import IdentityObservation, KamisParseError
 
 _CODE = re.compile(r"[0-9]{1,20}\Z")
 _DECIMAL = re.compile(r"[0-9]+(?:\.[0-9]+)?\Z")
+_MAX_PRICE = Decimal("999999999999.99")
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +131,16 @@ class HistoricalRowValidator:
         if value <= 0:
             raise KamisParseError(
                 "invalid_positive_decimal", row_index=self.row_index, field=field
+            )
+        return value
+
+    def positive_price(self, field: str) -> Decimal:
+        value = self.positive_decimal(field)
+        source_text = self.row[field]
+        fraction = source_text.partition(".")[2]
+        if len(fraction) > 2 or value > _MAX_PRICE:
+            raise KamisParseError(
+                "invalid_price_precision", row_index=self.row_index, field=field
             )
         return value
 

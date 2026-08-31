@@ -84,6 +84,8 @@ def test_unknown_or_non_string_monthly_fields_do_not_echo_values() -> None:
         ("orgnl_reg_dt", "2026-08-31\n", "invalid_source_text"),
         ("pmm_avgprc", "1e3", "invalid_decimal"),
         ("pmm_avgprc", "0", "invalid_positive_decimal"),
+        ("pmm_avgprc", "1000.501", "invalid_price_precision"),
+        ("pmm_avgprc", "1000000000000.00", "invalid_price_precision"),
         ("pmm_stddvtn", "-1", "invalid_decimal"),
     ],
 )

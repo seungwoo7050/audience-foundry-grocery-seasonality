@@ -152,12 +152,12 @@ def parse_monthly_price_rows(
 
 
 def _parse_row(validator: HistoricalRowValidator) -> ParsedMonthlyPriceRow:
-    pmm_avgprc = validator.positive_decimal("pmm_avgprc")
-    pmm_hgprc = validator.positive_decimal("pmm_hgprc")
-    pmm_lwprc = validator.positive_decimal("pmm_lwprc")
-    pyy_avgprc = validator.positive_decimal("pyy_avgprc")
-    pyy_hgprc = validator.positive_decimal("pyy_hgprc")
-    pyy_lwprc = validator.positive_decimal("pyy_lwprc")
+    pmm_avgprc = validator.positive_price("pmm_avgprc")
+    pmm_hgprc = validator.positive_price("pmm_hgprc")
+    pmm_lwprc = validator.positive_price("pmm_lwprc")
+    pyy_avgprc = validator.positive_price("pyy_avgprc")
+    pyy_hgprc = validator.positive_price("pyy_hgprc")
+    pyy_lwprc = validator.positive_price("pyy_lwprc")
     require_price_range(
         pmm_lwprc,
         pmm_avgprc,

@@ -19,6 +19,15 @@
           {% if provenance.coverage_label %}<div><dt>조사 범위</dt><dd>{{ provenance.coverage_label }}</dd></div>{% endif %}
         </dl>
       {% endif %}
+      {% if selection_add_url %}
+        <div class="detail-actions">
+          <a class="button button--secondary" href="{{ selection_add_url }}">선택 목록에 담기</a>
+        </div>
+      {% elif historical_links.selection_url %}
+        <div class="detail-actions">
+          <a class="button button--secondary" href="{{ historical_links.selection_url }}">선택 목록에 담기</a>
+        </div>
+      {% endif %}
     </div>
 
     {% if detail_state != "loading" and detail_state != "unavailable" and detail_state != "server_error" %}
@@ -42,6 +51,18 @@
       </div>
     {% endif %}
   </header>
+
+  {% if section_nav %}
+    {% include "grocery/_series_nav.html" with section_nav=section_nav series=series %}
+  {% elif historical_links %}
+    <nav class="series-nav" aria-label="{{ series.item_name }} 자료 보기">
+      <ul>
+        <li><span class="series-nav__item series-nav__item--current" aria-current="page">최근 조사값</span></li>
+        {% if historical_links.history_url %}<li><a class="series-nav__item" href="{{ historical_links.history_url }}">월별 기록</a></li>{% endif %}
+        {% if historical_links.regions_url %}<li><a class="series-nav__item" href="{{ historical_links.regions_url }}">지역별 조사값</a></li>{% endif %}
+      </ul>
+    </nav>
+  {% endif %}
 
   {% if detail_state == "loading" or detail_state == "unavailable" or detail_state == "server_error" %}
     {% include "grocery/_state_notice.html" with state=detail_state retry_url=retry_url %}

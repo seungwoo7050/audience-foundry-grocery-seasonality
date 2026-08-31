@@ -72,8 +72,52 @@
       {% if selected_category %}
         <input type="hidden" name="category" value="{{ selected_category }}">
       {% endif %}
+      {% if selected_period and selected_period != "week" %}<input type="hidden" name="period" value="{{ selected_period }}">{% endif %}
+      {% if selected_direction and selected_direction != "all" %}<input type="hidden" name="direction" value="{{ selected_direction }}">{% endif %}
+      {% if selected_sort and selected_sort != "name" %}<input type="hidden" name="sort" value="{{ selected_sort }}">{% endif %}
       <button class="button button--primary" type="submit">검색</button>
     </form>
+
+    {% if period_options and direction_options and sort_options %}
+      <details class="catalog-options"{% if filters_open %} open{% endif %}>
+        <summary>
+          <span>비교·정렬 기준</span>
+          <span class="catalog-options__current">
+            {{ selected_period_label|default:"1주 비교" }}
+            · {{ selected_sort_label|default:"품목명 순" }}
+          </span>
+        </summary>
+        <form class="filter-form" action="{{ form_action|default:'' }}" method="get">
+          {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
+          <div class="field-group">
+            <label for="catalog-period">비교 기간</label>
+            <select id="catalog-period" name="period">
+              {% for option in period_options %}
+                <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field-group">
+            <label for="catalog-direction">변화 방향</label>
+            <select id="catalog-direction" name="direction">
+              {% for option in direction_options %}
+                <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field-group">
+            <label for="catalog-sort">표시 순서</label>
+            <select id="catalog-sort" name="sort">
+              {% for option in sort_options %}
+                <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button class="button button--secondary" type="submit">기준 적용</button>
+        </form>
+        <p class="catalog-options__note">가격이 아니라 같은 품목 조건의 변화율을 기준으로 정렬합니다.</p>
+      </details>
+    {% endif %}
     </section>
   {% endif %}
 
@@ -92,27 +136,7 @@
           {% if result_count_label %}<p class="result-count" aria-live="polite">{{ result_count_label }}</p>{% endif %}
         </div>
 
-        {% if publication %}
-          <dl class="publication-summary" aria-label="공개 자료 정보">
-            <div>
-              <dt>KAMIS 자료 확인 일시</dt>
-              <dd>
-                {% if publication.checked_at_iso %}<time datetime="{{ publication.checked_at_iso }}">{% endif %}
-                {{ publication.checked_at_display }}
-                {% if publication.checked_at_iso %}</time>{% endif %}
-              </dd>
-            </div>
-            <div>
-              <dt>자료 상태</dt>
-              <dd>
-                <span class="status-text status-text--{{ publication.freshness_state|default:'current' }}">
-                  <span aria-hidden="true">{% if publication.freshness_state == "stale" %}!{% else %}✓{% endif %}</span>
-                  {{ publication.freshness_label }}
-                </span>
-              </dd>
-            </div>
-          </dl>
-        {% endif %}
+        {% include "grocery/_publication_summary.html" with publication=publication %}
 
         {% regroup results by category_label as result_groups %}
         <div class="catalog-ledger">
@@ -122,7 +146,7 @@
               <div class="ledger-column-head" aria-hidden="true">
                 <span>품목·조건</span>
                 <span>소매 조사 평균</span>
-                <span>1주 비교</span>
+                <span>{{ selected_period_heading|default:"1주 비교" }}</span>
                 <span>조사일</span>
                 <span>이동</span>
               </div>
@@ -151,27 +175,29 @@
                       </dl>
 
                       <dl class="ledger-fact ledger-fact--comparison">
-                        <dt>1주 비교</dt>
+                        <dt>{{ selected_period_heading|default:"1주 비교" }}</dt>
                         <dd>
-                          {% if item.week_comparison.available %}
-                            <span class="direction direction--{{ item.week_comparison.direction_code|lower }}">
-                              <span class="direction__symbol" aria-hidden="true">
-                                {% if item.week_comparison.direction_code == "LOWER" %}↓{% elif item.week_comparison.direction_code == "HIGHER" %}↑{% else %}＝{% endif %}
+                          {% with comparison=item.comparison|default:item.week_comparison %}
+                            {% if comparison.available %}
+                              <span class="direction direction--{{ comparison.direction_code|lower }}">
+                                <span class="direction__symbol" aria-hidden="true">
+                                  {% if comparison.direction_code == "LOWER" %}↓{% elif comparison.direction_code == "HIGHER" %}↑{% else %}＝{% endif %}
+                                </span>
+                                <span>
+                                  {% if comparison.direction_code == "EQUAL" %}
+                                    {{ comparison.period_label }}과 같음 ({{ comparison.percentage_display }})
+                                  {% else %}
+                                    {{ comparison.period_label }}보다 {{ comparison.difference_display }}
+                                    {{ comparison.direction_label }} ({{ comparison.percentage_display }})
+                                  {% endif %}
+                                </span>
                               </span>
-                              <span>
-                                {% if item.week_comparison.direction_code == "EQUAL" %}
-                                  1주 전 제공값과 같음 ({{ item.week_comparison.percentage_display }})
-                                {% else %}
-                                  1주 전 제공값보다 {{ item.week_comparison.difference_display }}
-                                  {{ item.week_comparison.direction_label }} ({{ item.week_comparison.percentage_display }})
-                                {% endif %}
+                            {% else %}
+                              <span class="status-text status-text--unavailable">
+                                <span aria-hidden="true">○</span> {{ selected_period_missing_label|default:"1주 전 비교값 없음" }}
                               </span>
-                            </span>
-                          {% else %}
-                            <span class="status-text status-text--unavailable">
-                              <span aria-hidden="true">○</span> 1주 전 비교값 없음
-                            </span>
-                          {% endif %}
+                            {% endif %}
+                          {% endwith %}
                         </dd>
                       </dl>
 
@@ -184,7 +210,10 @@
                         </dd>
                       </dl>
 
-                      <span class="ledger-entry__action" aria-hidden="true">→</span>
+                      <div class="ledger-entry__actions">
+                        {% if item.selection_url %}<a href="{{ item.selection_url }}">선택</a>{% endif %}
+                        <span class="ledger-entry__action" aria-hidden="true">→</span>
+                      </div>
                     </article>
                   </li>
                 {% endfor %}
@@ -192,6 +221,7 @@
             </section>
           {% endfor %}
         </div>
+        {% include "grocery/_pagination.html" with pagination=pagination %}
       </section>
     {% else %}
       {% include "grocery/_state_notice.html" with state="empty" recovery_url=form_action %}

@@ -1,7 +1,9 @@
+import uuid
 from decimal import Decimal
 
+import psycopg
 import pytest
-from django.db import DatabaseError, transaction
+from django.db import DatabaseError, connection, transaction
 from django.utils import timezone
 
 from grocery.historical_collection_models import (
@@ -140,3 +142,35 @@ def test_database_binds_part_scope_and_fact_membership_then_freezes_rows(db: Non
         )
     with pytest.raises(DatabaseError), transaction.atomic():
         HistoricalSourceCollectionPart.objects.filter(pk=first_part.pk).delete()
+
+
+def test_collection_completion_serializes_against_part_insert(transactional_db: None) -> None:
+    source = create_source_configuration(
+        dataset_id="15156060",
+        publication_mode=SourceConfiguration.PublicationMode.HISTORICAL_MONTHLY,
+    )
+    scope = "9" * 64
+    collection = _monthly_collection(source, scope)
+    parse_run = _parse(source, scope, "8")
+    connection_params = connection.get_connection_params()
+
+    with (
+        psycopg.connect(**connection_params) as completing,
+        psycopg.connect(**connection_params) as appending,
+    ):
+        completing.execute(
+            "UPDATE grocery_historicalsourcecollection "
+            "SET state = 'VALIDATED', completed_at = now(), result_sha256 = %s "
+            "WHERE id = %s",
+            ("7" * 64, collection.id),
+        )
+        appending.execute("SET LOCAL lock_timeout = '100ms'")
+        with pytest.raises(psycopg.errors.LockNotAvailable):
+            appending.execute(
+                "INSERT INTO grocery_historicalsourcecollectionpart "
+                "(id, ordinal, partition_scope_sha256, fact_count, collection_id, parse_run_id) "
+                "VALUES (%s, %s, %s, %s, %s, %s)",
+                (uuid.uuid4(), 1, scope, 1, collection.id, parse_run.id),
+            )
+        appending.rollback()
+        completing.rollback()

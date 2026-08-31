@@ -95,6 +95,8 @@ class HistoricalRetailPublicationActivation(models.Model):
     acceptance_evidence_sha256 = models.CharField(max_length=64, validators=[sha256_validator])
     created_at = models.DateTimeField(auto_now_add=True)
 
+    _transition_write = False
+
     class Meta:
         constraints = [
             models.UniqueConstraint(

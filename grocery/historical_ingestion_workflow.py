@@ -114,41 +114,44 @@ def ingest_historical_collection(
             raise HistoricalIngestionError("FETCH_PERSISTENCE_FAILED") from None
         try:
             if dataset == HistoricalDataset.MONTHLY:
-                parsed = parse_monthly_price_rows(fetched.rows, registry=registry)
+                parsed_monthly = parse_monthly_price_rows(fetched.rows, registry=registry)
                 persist_monthly_part(
                     collection_id=collection.id,
                     ordinal=partition_ordinal,
                     artifact_id=completed_fetch.artifact.id,
                     prepared_request=prepared,
-                    parsed=parsed,
+                    parsed=parsed_monthly,
                     code_manifest_sha256=code_manifest_sha256,
                 )
+                accepted_rows = len(parsed_monthly.rows)
             elif dataset == HistoricalDataset.REGIONAL:
-                parsed = parse_regional_price_rows(fetched.rows, registry=registry)
+                parsed_regional = parse_regional_price_rows(fetched.rows, registry=registry)
                 persist_regional_part(
                     collection_id=collection.id,
                     ordinal=partition_ordinal,
                     artifact_id=completed_fetch.artifact.id,
                     prepared_request=prepared,
-                    parsed=parsed,
+                    parsed=parsed_regional,
                     code_manifest_sha256=code_manifest_sha256,
                 )
+                accepted_rows = len(parsed_regional.rows)
             else:
-                parsed = parse_market_price_rows(fetched.rows, registry=registry)
+                parsed_market = parse_market_price_rows(fetched.rows, registry=registry)
                 persist_market_part(
                     collection_id=collection.id,
                     ordinal=partition_ordinal,
                     artifact_id=completed_fetch.artifact.id,
                     prepared_request=prepared,
-                    parsed=parsed,
+                    parsed=parsed_market,
                     code_manifest_sha256=code_manifest_sha256,
                 )
+                accepted_rows = len(parsed_market.rows)
         except KamisParseError:
             raise HistoricalIngestionError("PARSE_FAILED") from None
         except Exception:
             raise HistoricalIngestionError("PART_PERSISTENCE_FAILED") from None
-        accepted += len(parsed.rows)
-        del fetched, parsed
+        accepted += accepted_rows
+        del fetched
     try:
         completed = complete_historical_collection(collection.id)
     except Exception:

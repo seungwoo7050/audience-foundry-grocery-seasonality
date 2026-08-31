@@ -121,7 +121,7 @@ class HistoricalCollectionReviewDecision(models.Model):
         if not self.collection_id:
             return
         collection = self.collection
-        expected_mode = {
+        expected_modes: dict[str, str] = {
             HistoricalSourceCollection.Kind.MONTHLY: (
                 SourceConfiguration.PublicationMode.HISTORICAL_MONTHLY
             ),
@@ -131,7 +131,8 @@ class HistoricalCollectionReviewDecision(models.Model):
             HistoricalSourceCollection.Kind.MARKET_DAILY: (
                 SourceConfiguration.PublicationMode.HISTORICAL_MARKET
             ),
-        }[collection.kind]
+        }
+        expected_mode = expected_modes[collection.kind]
         if (
             collection.source_configuration.state != SourceConfiguration.State.ACTIVE
             or collection.source_configuration.publication_mode != expected_mode

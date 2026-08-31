@@ -6,6 +6,7 @@ import hashlib
 import json
 import uuid
 from collections.abc import Sequence
+from typing import Any
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -46,7 +47,7 @@ def complete_historical_collection(collection_id: uuid.UUID) -> HistoricalSource
     if partition_manifest_sha256(scopes) != collection.partition_manifest_sha256:
         raise ValidationError("Historical collection partition manifest does not match its plan.")
 
-    fact_models = {
+    fact_models: dict[str, Any] = {
         HistoricalSourceCollection.Kind.MONTHLY: MonthlyRegionalRetailPrice,
         HistoricalSourceCollection.Kind.REGIONAL_DAILY: DailyRegionalRetailPrice,
         HistoricalSourceCollection.Kind.MARKET_DAILY: DailyMarketRetailPrice,

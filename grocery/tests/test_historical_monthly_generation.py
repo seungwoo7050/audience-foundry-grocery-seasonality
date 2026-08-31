@@ -76,7 +76,16 @@ def test_monthly_parser_result_persists_candidate_without_publication(db: None) 
         code_manifest_sha256="a" * 64,
     )
     validated = complete_historical_collection(collection.id)
+    replay = persist_monthly_part(
+        collection_id=collection.id,
+        ordinal=1,
+        artifact_id=artifact.id,
+        prepared_request=prepared,
+        parsed=parsed,
+        code_manifest_sha256="a" * 64,
+    )
 
     fact = MonthlyRegionalRetailPrice.objects.get(collection=completed.collection)
     assert (validated.state, fact.provider_mean) == ("VALIDATED", Decimal("1000"))
+    assert replay.replayed is True
     assert HistoricalCollectionReviewDecision.objects.count() == review_count

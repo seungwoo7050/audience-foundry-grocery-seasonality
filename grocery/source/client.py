@@ -1,4 +1,4 @@
-"""Secret-safe HTTPS transport for the KAMIS recent-price endpoint.
+"""Secret-safe HTTPS transport for approved KAMIS price endpoints.
 
 The transport deliberately retains only normalized rows and redacted receipts. Raw
 response bodies and request URLs exist only inside a single call and are never put in
@@ -25,6 +25,16 @@ from urllib.request import (
     OpenerDirector,
     Request,
     build_opener,
+)
+
+from grocery.source.historical_client import (
+    is_safe_historical_request_shape,
+    prepare_historical_request,
+)
+from grocery.source.historical_contract import (
+    HistoricalContractError,
+    HistoricalDataset,
+    HistoricalPriceQuery,
 )
 
 KAMIS_ENDPOINT = "https://apis.data.go.kr/B552845/recent/price"
@@ -65,6 +75,11 @@ _SAFE_TRANSPORT_ERROR_CODES = frozenset(
         "invalid_items_envelope",
         "invalid_json",
         "invalid_page_size",
+        "invalid_historical_dataset",
+        "invalid_historical_filter",
+        "invalid_historical_range",
+        "invalid_historical_date",
+        "missing_historical_region",
         "invalid_provider_header",
         "invalid_response_state",
         "invalid_retry_state",
@@ -98,6 +113,7 @@ type JsonValue = None | bool | int | float | str | list[JsonValue] | dict[str, J
 type JsonObject = dict[str, JsonValue]
 type OpenUrl = Callable[[Request, float], ResponseLike]
 type Sleep = Callable[[float], None]
+type RequestBuilder = Callable[[str, int, int], Request]
 
 
 class ResponseLike(Protocol):
@@ -201,6 +217,26 @@ class KamisTransportError(RuntimeError):
 
         self.partial_page_receipts = receipts
 
+    def _use_request_shape(self, request_shape: str) -> None:
+        """Replace the generic shape with a generated value-only-safe shape."""
+
+        if request_shape != REDACTED_REQUEST_SHAPE and not is_safe_historical_request_shape(
+            request_shape
+        ):
+            return
+        self.request_shape = request_shape
+        details = [f"code={self.code}"]
+        if self.page_number is not None:
+            details.append(f"page={self.page_number}")
+        if self.attempt is not None:
+            details.append(f"attempt={self.attempt}")
+        if self.http_status is not None:
+            details.append(f"http_status={self.http_status}")
+        if self.provider_result_code is not None:
+            details.append(f"provider_result_code={self.provider_result_code}")
+        details.append(f"request={request_shape}")
+        self.args = (" ".join(details),)
+
 
 @dataclass(frozen=True, slots=True)
 class PageReceipt:
@@ -286,6 +322,54 @@ class KamisHttpClient:
         """Fetch every ordered page, keeping raw bytes only within this call."""
 
         normalized_key = _normalize_service_key(service_key)
+        return self._fetch_prices(
+            normalized_key,
+            page_size=page_size,
+            request_builder=lambda key, page, size: _build_request(
+                key,
+                page_number=page,
+                page_size=size,
+            ),
+            request_shape=REDACTED_REQUEST_SHAPE,
+        )
+
+    def fetch_historical_prices(
+        self,
+        dataset: HistoricalDataset,
+        service_key: str,
+        *,
+        query: HistoricalPriceQuery,
+        page_size: int = DEFAULT_PAGE_SIZE,
+    ) -> KamisFetchResult:
+        """Fetch one bounded approved historical slice with no query-value retention."""
+
+        try:
+            prepared = prepare_historical_request(dataset, query)
+        except HistoricalContractError as error:
+            raise KamisTransportError(error.code) from None
+
+        def request_builder(key: str, page: int, size: int) -> Request:
+            try:
+                return prepared.build(key, page, size)
+            except HistoricalContractError as error:
+                raise KamisTransportError(error.code) from None
+
+        normalized_key = _normalize_service_key(service_key)
+        return self._fetch_prices(
+            normalized_key,
+            page_size=page_size,
+            request_builder=request_builder,
+            request_shape=prepared.request_shape,
+        )
+
+    def _fetch_prices(
+        self,
+        normalized_key: str,
+        *,
+        page_size: int,
+        request_builder: RequestBuilder,
+        request_shape: str,
+    ) -> KamisFetchResult:
         _validate_page_size(page_size)
         budget = _CallBudget()
         rows: list[JsonObject] = []
@@ -300,6 +384,7 @@ class KamisHttpClient:
                     page_number=page_number,
                     page_size=page_size,
                     budget=budget,
+                    request_builder=request_builder,
                 )
 
                 if expected_total is None:
@@ -340,6 +425,7 @@ class KamisHttpClient:
                     raise KamisTransportError("page_budget_exceeded", page_number=page_number)
         except KamisTransportError as error:
             error._retain_completed_pages(tuple(receipts))
+            error._use_request_shape(request_shape)
             raise
 
         frozen_receipts = tuple(receipts)
@@ -357,6 +443,7 @@ class KamisHttpClient:
         page_number: int,
         page_size: int,
         budget: _CallBudget,
+        request_builder: RequestBuilder,
     ) -> _DecodedPage:
         last_retry: _RetrySignal | None = None
 
@@ -366,6 +453,7 @@ class KamisHttpClient:
                 normalized_key,
                 page_number=page_number,
                 page_size=page_size,
+                request_builder=request_builder,
             )
             if isinstance(outcome, _DecodedPage):
                 return outcome
@@ -390,12 +478,9 @@ class KamisHttpClient:
         *,
         page_number: int,
         page_size: int,
+        request_builder: RequestBuilder,
     ) -> _DecodedPage | _RetrySignal:
-        request = _build_request(
-            normalized_key,
-            page_number=page_number,
-            page_size=page_size,
-        )
+        request = request_builder(normalized_key, page_number, page_size)
         response: ResponseLike | None = None
         safe_error: KamisTransportError | None = None
         retry: _RetrySignal | None = None

@@ -42,11 +42,18 @@ gate로 검증합니다. file path가 통과해도 이를 현재가격, 실시�
 채우는 자료로 사용하지 않습니다. 별도 typed monthly model, publication channel, route와
 rollback을 사용합니다.
 
-### 3. 후속 API `15156060`과 `15156065`
+### 3. vNext historical API `15156060`, `15156062`, `15156065`
 
-연월별·기간별 소매가격은 다년 월별 패턴을 위한 비활성 source 후보입니다. 첫
-MVP schema, ingestion schedule, 공개 UI와 acceptance에 포함하지 않습니다. 별도
-gate와 제품 결정 없이 이 데이터를 가져오거나 기존 profile에 섞지 않습니다.
+2026-08-31 승인된 vNext는 연월별, 지역별, 기간별 소매가격을 각각 월별 provider 범위,
+지역별 일 범위, 시장별 관측의 독립 source로 사용합니다. 최소 live interface gate와 실제
+JSON wrapper 증거는 `VNEXT-SOURCE-GATE.md`, 역할·결합 금지는
+`VNEXT-PRODUCT-CONTRACT.md`가 소유합니다.
+
+세 source는 별도 collection, typed fact, review와 `HISTORICAL_RETAIL` publication을
+사용합니다. daily·market 행으로 monthly 값을 만들거나 market 행으로 regional 평균을
+재구성하지 않습니다. 공개 request는 이 API를 호출하지 않고 active sealed historical
+publication만 읽습니다. 전체 code manifest 승인과 첫 production collection·seal·activation은
+계속 사람 checkpoint입니다.
 
 ### 제외된 외부 경계
 
@@ -89,12 +96,14 @@ gate와 제품 결정 없이 이 데이터를 가져오거나 기존 profile에 
 
 ### public read 경계
 
-- Django form은 부류와 공식 품목명 검색만 받습니다.
+- Django form은 공식 품목명, 부류, 비교기간·방향·정렬·page와 승인된 history range,
+  region, date, 최대 다섯 internal series UUID만 bounded GET state로 받습니다.
 - 검색 길이, 문자와 result 수를 제한하며 검색어를 공개 방문자 session, cache, analytics,
   log와 audit에 남기지 않습니다. Django Admin의 보안 인증 session은 별도 운영 정책을
   따릅니다.
-- 목록·상세는 published read model만 조회하고 외부 source, 운영 candidate와 raw
-  artifact에 접근하지 않습니다.
+- 목록·상세·선택 목록은 active recent publication, 월별·지역별·시장별 화면은 active
+  historical publication만 조회하고 외부 source, 운영 candidate와 raw artifact에 접근하지
+  않습니다.
 - 공개 URL에는 stable internal slug만 사용하며 source key나 secret query를 넣지 않습니다.
 
 ## 데이터 흐름
@@ -106,11 +115,11 @@ platform cron
   -> FetchAttempt + redacted receipt
   -> content-addressed SourceArtifact
   -> versioned ParseRun + reconciliation
-  -> typed recent retail facts or typed monthly retail snapshots
+  -> typed recent retail facts or typed historical monthly/regional/market facts
   -> ReviewDecision
-  -> immutable PublicationRevision
-  -> append-only PublicationActivation + atomic channel pointer
-  -> Django server-rendered list/detail
+  -> immutable recent or historical publication revision
+  -> channel별 append-only activation + atomic pointer
+  -> Django server-rendered list/detail/history/region/market/selection
 ```
 
 한 단계의 성공을 다음 단계의 성공으로 간주하지 않습니다. HTTP 200은 artifact 승인,

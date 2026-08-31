@@ -2,9 +2,10 @@
 
 ## 문서 상태
 
-이 문서는 첫 구현이 따라야 할 기술 기준선이다. 현재 저장소에는 런타임 코드, 의존성,
-잠금 파일, 수집 데이터와 배포 구성이 없다. 아래 버전과 구조는 source gate를 통과한 뒤
-구현 계획에서 실제 호환성을 다시 증명하고 도입한다.
+이 문서는 첫 구현이 따랐던 기술 기준선이며 저장소에는 현재 Django runtime, 잠금 파일,
+PostgreSQL migration과 Phase 0 공개 경계가 구현돼 있다. vNext도 같은 고정 stack과 modular
+monolith를 유지하며 신규 계약은 `VNEXT-PRODUCT-CONTRACT.md`와
+`VNEXT-PUBLIC-READ-CONTRACT.md`가 추가한다.
 
 ## 고정 기준 스택
 

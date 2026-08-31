@@ -1,5 +1,9 @@
 # 첫 구현 계획
 
+> 이 문서는 Phase 0 A path의 구현·증거 기록이다. 2026-08-31 이후 historical consumer
+> 확장은 `VNEXT-PRODUCT-CONTRACT.md`, `VNEXT-SOURCE-GATE.md`와
+> `VNEXT-PUBLIC-READ-CONTRACT.md`를 따른다.
+
 ## 결정
 
 선택 path는 **A — 최근 비교 MVP**다. 공개 표현은 `KAMIS 소매 조사 평균`과

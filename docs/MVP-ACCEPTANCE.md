@@ -181,10 +181,14 @@ snapshot과 섞지 않는다. 이를 현재 가격이나 실시간 정보로 표
 CLI 검증과 분리된 **production 사람 checkpoint**다. platform packaging 방식이 선택된 뒤 실제
 artifact를 검사하기 전에는 이 항목을 통과로 기록하지 않는다.
 
-## 월별 과거 패턴 module gate — 해당 없음(N/A)
+## 월별 과거 패턴 module gate — Phase 0 역사 기록
 
-이번 구현은 A path이므로 이 module은 별도 제품결정 미승인·비활성이다. 아래 항목은 이번
-acceptance에서 평가하지 않는다.
+아래 N/A 판정은 첫 A path Phase 0 acceptance 당시의 역사 기록이다. 2026-08-31 승인된
+vNext의 월별·지역별·시장별 확장은 `VNEXT-PRODUCT-CONTRACT.md`, 실제 interface gate는
+`VNEXT-SOURCE-GATE.md`, 공개 상태·route 인수 기준은 `VNEXT-PUBLIC-READ-CONTRACT.md`가
+대체해 소유한다. 전체 code manifest와 production activation은 아직 통과로 표시하지 않는다.
+
+Phase 0 당시에는 이 module을 평가하지 않았다.
 
 내부 repository 이름만으로 이 module을 활성화하지 않는다. 별도 제품 결정을 승인하기 전에
 다음을 모두 증명한다.

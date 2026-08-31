@@ -64,3 +64,7 @@ class MonthlyRegionalRetailPrice(HistoricalPriceFact):
         super().clean()
         if self.collection_id and self.collection.kind != HistoricalSourceCollection.Kind.MONTHLY:
             raise ValidationError("Monthly facts require a monthly collection.")
+        if self.collection_id and not (
+            self.collection.month_min <= self.year_month <= self.collection.month_max
+        ):
+            raise ValidationError("Monthly fact is outside its collection window.")

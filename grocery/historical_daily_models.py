@@ -62,6 +62,10 @@ class DailyRegionalRetailPrice(HistoricalPriceFact):
             and self.collection.kind != HistoricalSourceCollection.Kind.REGIONAL_DAILY
         ):
             raise ValidationError("Regional facts require a regional-daily collection.")
+        if self.collection_id and not (
+            self.collection.date_min <= self.survey_date <= self.collection.date_max
+        ):
+            raise ValidationError("Regional fact is outside its collection window.")
 
 
 class DailyMarketRetailPrice(HistoricalPriceFact):
@@ -103,3 +107,7 @@ class DailyMarketRetailPrice(HistoricalPriceFact):
             raise ValidationError("Market facts require a market-daily collection.")
         if self.market_id and self.region_id and self.market.region_id != self.region_id:
             raise ValidationError("Market and fact region do not match.")
+        if self.collection_id and not (
+            self.collection.date_min <= self.survey_date <= self.collection.date_max
+        ):
+            raise ValidationError("Market fact is outside its collection window.")

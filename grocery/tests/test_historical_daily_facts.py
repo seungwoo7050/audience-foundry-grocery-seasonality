@@ -18,24 +18,13 @@ from grocery.historical_identity_models import (
     price_series_identity_sha256,
 )
 from grocery.models import ParseRun, SourceConfiguration
+from grocery.tests.historical_test_support import create_scoped_artifact
 from grocery.tests.test_acquisition_models import create_source_configuration
-from grocery.tests.test_artifact_parse_models import create_artifact
 from grocery.tests.test_price_series_key_models import create_series
 
 
 def _part(kind: str, parser_revision: str) -> HistoricalSourceCollectionPart:
     completed_at = timezone.now()
-    parse_run = ParseRun.objects.create(
-        artifact=create_artifact(),
-        parser_revision=parser_revision,
-        configuration_hash=hashlib.sha256(f"config:{parser_revision}".encode()).hexdigest(),
-        result_hash=hashlib.sha256(f"result:{parser_revision}".encode()).hexdigest(),
-        status=ParseRun.Status.VALIDATED,
-        started_at=completed_at,
-        completed_at=completed_at,
-        total_row_count=1,
-        accepted_row_count=1,
-    )
     source = create_source_configuration(
         dataset_id=(
             "15156062" if kind == HistoricalSourceCollection.Kind.REGIONAL_DAILY else "15156065"
@@ -45,6 +34,18 @@ def _part(kind: str, parser_revision: str) -> HistoricalSourceCollectionPart:
             if kind == HistoricalSourceCollection.Kind.REGIONAL_DAILY
             else SourceConfiguration.PublicationMode.HISTORICAL_MARKET
         ),
+    )
+    scope = hashlib.sha256(parser_revision.encode()).hexdigest()
+    parse_run = ParseRun.objects.create(
+        artifact=create_scoped_artifact(source, scope),
+        parser_revision=parser_revision,
+        configuration_hash=hashlib.sha256(f"config:{parser_revision}".encode()).hexdigest(),
+        result_hash=hashlib.sha256(f"result:{parser_revision}".encode()).hexdigest(),
+        status=ParseRun.Status.VALIDATED,
+        started_at=completed_at,
+        completed_at=completed_at,
+        total_row_count=1,
+        accepted_row_count=1,
     )
     collection = HistoricalSourceCollection.objects.create(
         kind=kind,
@@ -58,7 +59,7 @@ def _part(kind: str, parser_revision: str) -> HistoricalSourceCollectionPart:
     return HistoricalSourceCollectionPart.objects.create(
         collection=collection,
         ordinal=1,
-        partition_scope_sha256=hashlib.sha256(parser_revision.encode()).hexdigest(),
+        partition_scope_sha256=scope,
         parse_run=parse_run,
         fact_count=1,
     )

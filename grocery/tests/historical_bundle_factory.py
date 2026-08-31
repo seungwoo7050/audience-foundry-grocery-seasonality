@@ -19,7 +19,8 @@ from grocery.historical_identity_models import (
 )
 from grocery.historical_monthly_models import MonthlyRegionalRetailPrice
 from grocery.historical_review_models import HistoricalCollectionReviewDecision
-from grocery.models import ParseRun, SourceArtifact, SourceConfiguration
+from grocery.models import ParseRun, SourceConfiguration
+from grocery.tests.historical_test_support import create_scoped_artifact
 from grocery.tests.test_acquisition_models import create_source_configuration
 from grocery.tests.test_price_series_key_models import create_series
 
@@ -57,13 +58,7 @@ def _collection_part(
         publication_mode=publication_mode,
     )
     digest = hashlib.sha256(parser_revision.encode("ascii")).hexdigest()
-    artifact = SourceArtifact.objects.create(
-        source_identity=f"fixture:{dataset_id}:{parser_revision}",
-        ordered_manifest_sha256=digest,
-        page_count=1,
-        total_bytes=1,
-        first_seen_at=now,
-    )
+    artifact = create_scoped_artifact(source, digest, row_count=fact_count)
     parse_run = ParseRun.objects.create(
         artifact=artifact,
         parser_revision=parser_revision,

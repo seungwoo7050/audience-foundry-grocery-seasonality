@@ -7,14 +7,17 @@ from grocery.historical_collection_models import (
     HistoricalSourceCollectionPart,
 )
 from grocery.models import ParseRun, SourceConfiguration
+from grocery.tests.historical_test_support import create_scoped_artifact
 from grocery.tests.test_acquisition_models import create_source_configuration
-from grocery.tests.test_artifact_parse_models import create_artifact
 
 
-def _validated_parse_run() -> ParseRun:
+def _validated_parse_run(
+    source: SourceConfiguration,
+    scope_sha256: str,
+) -> ParseRun:
     completed_at = timezone.now()
     return ParseRun.objects.create(
-        artifact=create_artifact(),
+        artifact=create_scoped_artifact(source, scope_sha256),
         parser_revision="historical-monthly-v1",
         configuration_hash="c" * 64,
         result_hash="d" * 64,
@@ -40,11 +43,12 @@ def test_collection_part_is_complete_then_terminally_immutable(db: None) -> None
         month_min="202301",
         month_max="202512",
     )
+    scope = "e" * 64
     part = HistoricalSourceCollectionPart.objects.create(
         collection=collection,
         ordinal=1,
-        partition_scope_sha256="e" * 64,
-        parse_run=_validated_parse_run(),
+        partition_scope_sha256=scope,
+        parse_run=_validated_parse_run(source, scope),
         fact_count=1,
     )
 

@@ -33,11 +33,12 @@ def test_monthly_fact_preserves_provider_range_and_is_immutable(db: None) -> Non
         month_min="202512",
         month_max="202512",
     )
+    scope = "c" * 64
     part = HistoricalSourceCollectionPart.objects.create(
         collection=collection,
         ordinal=1,
-        partition_scope_sha256="c" * 64,
-        parse_run=_validated_parse_run(),
+        partition_scope_sha256=scope,
+        parse_run=_validated_parse_run(source, scope),
         fact_count=1,
     )
     recent = create_series()

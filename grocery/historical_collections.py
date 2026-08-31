@@ -64,9 +64,10 @@ def complete_historical_collection(collection_id: uuid.UUID) -> HistoricalSource
             source_configuration=collection.source_configuration,
             artifact=parse_run.artifact,
             state=FetchAttempt.State.SUCCEEDED,
+            request_scope_sha256=part.partition_scope_sha256,
         ).exists():
             raise ValidationError(
-                "Historical collection parse source does not match the collection."
+                "Historical collection parse source does not match the collection scope."
             )
         actual_count = selected_model.objects.filter(
             collection=collection,

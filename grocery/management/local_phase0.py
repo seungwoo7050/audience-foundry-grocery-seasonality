@@ -14,7 +14,7 @@ from django.db import transaction
 
 LOCAL_OPERATOR_USERNAME: Final = "phase0-local-operator"
 LOCAL_APPROVAL_REASON_CODE: Final = "LOCAL_PHASE0_SOURCE_GATE_APPROVED"
-PUBLIC_COPY_REVISIONS: Final = frozenset({"ko-v1", "ko-v2", "ko-v3"})
+PUBLIC_COPY_REVISIONS: Final = frozenset({"ko-v1", "ko-v2", "ko-v3", "ko-v4"})
 
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 _PERMISSION_SPECS: Final = frozenset(

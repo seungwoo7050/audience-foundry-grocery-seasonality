@@ -37,14 +37,30 @@ CONTROL_TRANSITION_REASON_CODES: Final[dict[str, str]] = {
 ControlRole = Literal["reviewer", "publisher"]
 
 _RELEASE_SHA: Final = re.compile(r"[0-9a-f]{40}\Z")
-_ROLE_CONTRACTS: Final[dict[ControlRole, tuple[str, tuple[str, str, str]]]] = {
+PermissionSpec = tuple[str, str, str]
+
+_ROLE_CONTRACTS: Final[dict[ControlRole, tuple[str, tuple[PermissionSpec, ...]]]] = {
     "reviewer": (
         CONTROL_REVIEWER_USERNAME,
-        ("grocery", "reviewdecision", "review_generation"),
+        (
+            ("grocery", "reviewdecision", "review_generation"),
+            (
+                "grocery",
+                "historicalcollectionreviewdecision",
+                "review_historical_collection",
+            ),
+        ),
     ),
     "publisher": (
         CONTROL_PUBLISHER_USERNAME,
-        ("grocery", "publicationactivation", "publish_publication"),
+        (
+            ("grocery", "publicationactivation", "publish_publication"),
+            (
+                "grocery",
+                "historicalretailpublicationchannel",
+                "publish_historical_publication",
+            ),
+        ),
     ),
 }
 
@@ -123,22 +139,43 @@ def preflight_operation(expected_release_sha: object) -> bool:
     return False
 
 
-def _required_permission(role: ControlRole, *, lock: bool) -> Permission:
-    _username, (app_label, model, codename) = _ROLE_CONTRACTS[role]
+def _required_permissions(role: ControlRole, *, lock: bool) -> tuple[Permission, ...]:
+    _username, specs = _ROLE_CONTRACTS[role]
     query = Permission.objects.select_related("content_type").filter(
-        content_type__app_label=app_label,
-        content_type__model=model,
-        codename=codename,
+        content_type__app_label="grocery",
+        content_type__model__in=tuple(spec[1] for spec in specs),
+        codename__in=tuple(spec[2] for spec in specs),
     )
     if lock:
         query = query.select_for_update()
-    permissions = tuple(query)
-    if len(permissions) != 1:
+    permissions = tuple(query.order_by("content_type__model", "codename"))
+    actual = {
+        (
+            permission.content_type.app_label,
+            permission.content_type.model,
+            permission.codename,
+        )
+        for permission in permissions
+    }
+    if actual != set(specs):
         raise ControlPlaneError(ControlPlaneCode.PERMISSION_MISSING)
-    return permissions[0]
+    return permissions
 
 
-def _validate_actor_shape(actor: Any, *, role: ControlRole, permission: Permission) -> None:
+def _validate_actor_shape(
+    actor: Any,
+    *,
+    role: ControlRole,
+    permissions: tuple[Permission, ...],
+) -> None:
+    _validate_actor_identity(actor, role=role)
+    if set(actor.user_permissions.values_list("id", flat=True)) != {
+        permission.id for permission in permissions
+    }:
+        raise ControlPlaneError(ControlPlaneCode.ACTOR_CONFLICT)
+
+
+def _validate_actor_identity(actor: Any, *, role: ControlRole) -> None:
     username, _permission_spec = _ROLE_CONTRACTS[role]
     if (
         getattr(actor, "username", None) != username
@@ -150,7 +187,6 @@ def _validate_actor_shape(actor: Any, *, role: ControlRole, permission: Permissi
         or getattr(actor, "is_superuser", None) is not False
         or actor.has_usable_password()
         or actor.groups.exists()
-        or set(actor.user_permissions.values_list("id", flat=True)) != {permission.id}
     ):
         raise ControlPlaneError(ControlPlaneCode.ACTOR_CONFLICT)
 
@@ -163,7 +199,7 @@ def _control_actor_id(actor: Any) -> int:
 
 
 def _get_control_actor(*, role: ControlRole, lock: bool) -> Any:
-    permission = _required_permission(role, lock=lock)
+    permissions = _required_permissions(role, lock=lock)
     username, _permission_spec = _ROLE_CONTRACTS[role]
     user_model = get_user_model()
     query = user_model._default_manager.all()
@@ -172,7 +208,7 @@ def _get_control_actor(*, role: ControlRole, lock: bool) -> Any:
     actor = query.filter(username=username).first()
     if actor is None:
         raise ControlPlaneError(ControlPlaneCode.ACTOR_MISSING)
-    _validate_actor_shape(actor, role=role, permission=permission)
+    _validate_actor_shape(actor, role=role, permissions=permissions)
     _control_actor_id(actor)
     return actor
 
@@ -195,7 +231,7 @@ def resolve_operation_actor(
     return OperationActor(actor=actor, actor_id=actor_id, production=production)
 
 
-def _create_actor(*, role: ControlRole, permission: Permission) -> Any:
+def _create_actor(*, role: ControlRole, permissions: tuple[Permission, ...]) -> Any:
     username, _permission_spec = _ROLE_CONTRACTS[role]
     user_model = get_user_model()
     actor = user_model(
@@ -210,8 +246,8 @@ def _create_actor(*, role: ControlRole, permission: Permission) -> Any:
     actor.set_unusable_password()
     actor.full_clean()
     actor.save()
-    actor.user_permissions.set((permission,))
-    _validate_actor_shape(actor, role=role, permission=permission)
+    actor.user_permissions.set(permissions)
+    _validate_actor_shape(actor, role=role, permissions=permissions)
     _control_actor_id(actor)
     return actor
 
@@ -221,7 +257,7 @@ def bootstrap_control_plane_actors(expected_release_sha: object) -> Bootstrapped
     """Create both fixed actors once; any existing semantic drift fails atomically."""
 
     require_production_operation_environment(expected_release_sha)
-    permissions = {role: _required_permission(role, lock=True) for role in _ROLE_CONTRACTS}
+    permissions = {role: _required_permissions(role, lock=True) for role in _ROLE_CONTRACTS}
     user_model = get_user_model()
     existing = {
         actor.username: actor
@@ -236,9 +272,15 @@ def bootstrap_control_plane_actors(expected_release_sha: object) -> Bootstrapped
         actor = existing.get(username)
         was_created = actor is None
         if actor is None:
-            actor = _create_actor(role=role, permission=permissions[role])
+            actor = _create_actor(role=role, permissions=permissions[role])
         else:
-            _validate_actor_shape(actor, role=role, permission=permissions[role])
+            _validate_actor_identity(actor, role=role)
+            expected_ids = {permission.id for permission in permissions[role]}
+            current_ids = set(actor.user_permissions.values_list("id", flat=True))
+            if not current_ids.issubset(expected_ids):
+                raise ControlPlaneError(ControlPlaneCode.ACTOR_CONFLICT)
+            actor.user_permissions.set(permissions[role])
+            _validate_actor_shape(actor, role=role, permissions=permissions[role])
             _control_actor_id(actor)
         actors[role] = actor
         created[role] = was_created

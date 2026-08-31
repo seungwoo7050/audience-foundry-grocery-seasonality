@@ -21,6 +21,16 @@ _PERMISSION_SPECS: Final = frozenset(
     {
         ("grocery", "reviewdecision", "review_generation"),
         ("grocery", "publicationactivation", "publish_publication"),
+        (
+            "grocery",
+            "historicalcollectionreviewdecision",
+            "review_historical_collection",
+        ),
+        (
+            "grocery",
+            "historicalretailpublicationchannel",
+            "publish_historical_publication",
+        ),
     }
 )
 
@@ -86,8 +96,8 @@ def require_copy_revision(value: object) -> str:
 def _required_permissions(*, lock: bool) -> tuple[Permission, ...]:
     query = Permission.objects.select_related("content_type").filter(
         content_type__app_label="grocery",
-        content_type__model__in=("reviewdecision", "publicationactivation"),
-        codename__in=("review_generation", "publish_publication"),
+        content_type__model__in=tuple(spec[1] for spec in _PERMISSION_SPECS),
+        codename__in=tuple(spec[2] for spec in _PERMISSION_SPECS),
     )
     if lock:
         query = query.select_for_update()

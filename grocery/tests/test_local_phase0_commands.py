@@ -39,6 +39,16 @@ def _permission_contract() -> set[tuple[str, str, str]]:
     return {
         ("grocery", "reviewdecision", "review_generation"),
         ("grocery", "publicationactivation", "publish_publication"),
+        (
+            "grocery",
+            "historicalcollectionreviewdecision",
+            "review_historical_collection",
+        ),
+        (
+            "grocery",
+            "historicalretailpublicationchannel",
+            "publish_historical_publication",
+        ),
     }
 
 

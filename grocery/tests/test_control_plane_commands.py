@@ -189,9 +189,59 @@ def test_bootstrap_creates_exact_nonlogin_roles_and_replays_idempotently() -> No
         assert actor.is_superuser is False
         assert actor.has_usable_password() is False
         assert actor.groups.count() == 0
-    assert _permission_contract(reviewer) == {("grocery", "reviewdecision", "review_generation")}
+    assert _permission_contract(reviewer) == {
+        ("grocery", "reviewdecision", "review_generation"),
+        (
+            "grocery",
+            "historicalcollectionreviewdecision",
+            "review_historical_collection",
+        ),
+    }
     assert _permission_contract(publisher) == {
-        ("grocery", "publicationactivation", "publish_publication")
+        ("grocery", "publicationactivation", "publish_publication"),
+        (
+            "grocery",
+            "historicalretailpublicationchannel",
+            "publish_historical_publication",
+        ),
+    }
+
+
+@pytest.mark.django_db
+@override_settings(**_PRODUCTION_SETTINGS)
+def test_bootstrap_expands_existing_recent_only_actors_to_historical_roles() -> None:
+    contracts = (
+        (CONTROL_REVIEWER_USERNAME, "review_generation"),
+        (CONTROL_PUBLISHER_USERNAME, "publish_publication"),
+    )
+    for username, codename in contracts:
+        actor = get_user_model()._default_manager.create_user(
+            username=username,
+            password=None,
+            is_active=True,
+            is_staff=False,
+            is_superuser=False,
+        )
+        actor.user_permissions.add(Permission.objects.get(codename=codename))
+
+    receipt = _run("bootstrap_control_plane_actors", expected_release_sha=_RELEASE_SHA)
+
+    assert "review_created=no" in receipt and "publication_created=no" in receipt
+    assert _permission_contract(_user(CONTROL_REVIEWER_USERNAME)) == {
+        ("grocery", "reviewdecision", "review_generation"),
+        (
+            "grocery",
+            "historicalcollectionreviewdecision",
+            "review_historical_collection",
+        ),
+    }
+    assert _permission_contract(_user(CONTROL_PUBLISHER_USERNAME)) == {
+        ("grocery", "publicationactivation", "publish_publication"),
+        (
+            "grocery",
+            "historicalretailpublicationchannel",
+            "publish_historical_publication",
+        ),
     }
 
 

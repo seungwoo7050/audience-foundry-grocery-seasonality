@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import os
 import re
 import uuid
@@ -14,13 +15,18 @@ from unittest.mock import patch
 from urllib.parse import urlsplit
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
 from django.core.management import call_command
 from django.db import transaction
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from grocery.historical_activation_models import HistoricalRetailPublicationActivation
+from grocery.historical_activation_models import (
+    HistoricalRetailPublicationActivation,
+    HistoricalRetailPublicationChannel,
+)
 from grocery.historical_activations import transition_historical_publication
 from grocery.historical_collection_models import HistoricalSourceCollection
 from grocery.historical_daily_models import DailyMarketRetailPrice, DailyRegionalRetailPrice
@@ -212,8 +218,10 @@ def _source_text(row: Mapping[str, object], field: str) -> str:
     return value
 
 
-def _root_rows_exist() -> bool:
-    root_models = (
+def _occupancy_models() -> tuple[type[Any], ...]:
+    """Return mutable roots that must be empty before a disposable live run."""
+
+    return (
         SourceConfiguration,
         SourceArtifact,
         PriceSeriesKey,
@@ -224,13 +232,19 @@ def _root_rows_exist() -> bool:
         RetailMarketKey,
         HistoricalSourceCollection,
         HistoricalRetailPublicationRevision,
+        HistoricalRetailPublicationChannel,
+        get_user_model(),
+        Group,
     )
-    return any(model.objects.exists() for model in root_models)
 
 
-def _require_disposable_environment() -> None:
+def _root_rows_exist() -> bool:
+    return any(model.objects.exists() for model in _occupancy_models())
+
+
+def _require_disposable_environment(opt_in_variable: str) -> None:
     validate_disposable_environment(
-        opt_in=os.environ.get("LIVE_SOURCE_E2E_SMOKE"),
+        opt_in=os.environ.get(opt_in_variable),
         debug=settings.DEBUG,
         admin_enabled=getattr(settings, "ADMIN_ENABLED", None),
         qa_previews_enabled=getattr(settings, "QA_STATE_PREVIEWS_ENABLED", None),
@@ -537,10 +551,27 @@ def _execute_live_flow() -> LiveSmokeReceipt:
         actor, _created = bootstrap_local_operator()
 
         stage = "RECENT_INGESTION"
-        call_command("ingest_kamis_recent", page_size=_PAGE_SIZE)
+        command_output = io.StringIO()
+        try:
+            call_command("ingest_kamis_recent", page_size=_PAGE_SIZE, stdout=command_output)
+        finally:
+            command_output.close()
         parse_run = ParseRun.objects.get(status=ParseRun.Status.VALIDATED)
         recent = _publish_recent(parse_run, actor)
-        entry = recent.entries.select_related("snapshot__series").order_by("ordinal").first()
+        entry = (
+            recent.entries.select_related("snapshot__series")
+            .order_by(
+                "snapshot__series__category_code",
+                "snapshot__series__item_name",
+                "snapshot__series__item_code",
+                "snapshot__series__variety_code",
+                "snapshot__series__grade_code",
+                "snapshot__series__raw_unit",
+                "snapshot__series__raw_unit_size",
+                "snapshot__series_id",
+            )
+            .first()
+        )
         if entry is None:
             raise LiveSmokeInvariantError("recent_entry_missing")
         series = entry.snapshot.series
@@ -637,7 +668,7 @@ def _execute_live_flow() -> LiveSmokeReceipt:
 
 def run_live_api_e2e_smoke() -> LiveSmokeReceipt:
     try:
-        _require_disposable_environment()
+        _require_disposable_environment("LIVE_SOURCE_E2E_SMOKE")
     except Exception as error:
         raise LiveSmokeFailure("ENVIRONMENT", safe_failure_code(error)) from None
     try:
@@ -652,4 +683,23 @@ def run_live_api_e2e_smoke() -> LiveSmokeReceipt:
         _require(not _root_rows_exist(), "rollback_verification_failed")
     except Exception as error:
         raise LiveSmokeFailure("ROLLBACK", safe_failure_code(error)) from None
+    return receipt
+
+
+def run_live_browser_fixture() -> LiveSmokeReceipt:
+    """Commit normalized, test-published live data to an exact disposable database."""
+
+    try:
+        _require_disposable_environment("LIVE_SOURCE_BROWSER_FIXTURE")
+    except Exception as error:
+        raise LiveSmokeFailure("ENVIRONMENT", safe_failure_code(error)) from None
+    try:
+        with transaction.atomic():
+            receipt = _execute_live_flow()
+            _require(receipt.recent_rows >= 2, "fixture_selection_candidate_missing")
+            _require(_root_rows_exist(), "fixture_persistence_missing")
+    except LiveSmokeFailure:
+        raise
+    except Exception as error:
+        raise LiveSmokeFailure("FIXTURE", safe_failure_code(error)) from None
     return receipt

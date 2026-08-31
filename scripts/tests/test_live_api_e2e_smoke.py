@@ -1,19 +1,24 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from contextlib import nullcontext
 from datetime import date
 from pathlib import Path
 from typing import cast
 
 import pytest
 
+import scripts.live_api_e2e_smoke as live_smoke
 from grocery.source.client import KamisFetchResult
 from grocery.source.historical_contract import HistoricalDataset, HistoricalPriceQuery
 from scripts.live_api_e2e_smoke import (
     CachedLiveClient,
+    LiveSmokeFailure,
     LiveSmokeInvariantError,
     LiveSmokeReceipt,
     month_shift,
+    run_live_api_e2e_smoke,
+    run_live_browser_fixture,
     safe_failure_code,
     validate_disposable_environment,
 )
@@ -117,3 +122,101 @@ def test_make_target_is_explicit_and_outside_repository_gates() -> None:
     assert "LIVE_SOURCE_E2E_SMOKE=1" in makefile
     assert "check: format-check lint type migration-check test" in makefile
     assert "production-check: source-secret-env-check production-env-check" in makefile
+
+
+def test_live_browser_fixture_has_separate_opt_in_and_commits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    receipt = LiveSmokeReceipt(10, 36, 1, 9)
+    opt_ins: list[str] = []
+    monkeypatch.setattr(
+        "scripts.live_api_e2e_smoke._require_disposable_environment",
+        opt_ins.append,
+    )
+    monkeypatch.setattr(
+        "scripts.live_api_e2e_smoke._execute_live_flow",
+        lambda: receipt,
+    )
+    monkeypatch.setattr(
+        "scripts.live_api_e2e_smoke._root_rows_exist",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        "scripts.live_api_e2e_smoke.transaction.atomic",
+        nullcontext,
+    )
+
+    assert run_live_browser_fixture() is receipt
+    assert opt_ins == ["LIVE_SOURCE_BROWSER_FIXTURE"]
+
+
+def test_disposable_occupancy_covers_publication_channels_and_local_identity() -> None:
+    names = {model.__name__ for model in live_smoke._occupancy_models()}
+
+    assert {"PublicationChannel", "HistoricalRetailPublicationChannel", "User", "Group"} <= names
+
+
+def test_existing_live_smoke_keeps_separate_opt_in_and_explicit_rollback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    receipt = LiveSmokeReceipt(10, 36, 1, 9)
+    opt_ins: list[str] = []
+    rollbacks: list[bool] = []
+    monkeypatch.setattr(
+        "scripts.live_api_e2e_smoke._require_disposable_environment",
+        opt_ins.append,
+    )
+    monkeypatch.setattr("scripts.live_api_e2e_smoke._execute_live_flow", lambda: receipt)
+    monkeypatch.setattr("scripts.live_api_e2e_smoke._root_rows_exist", lambda: False)
+    monkeypatch.setattr("scripts.live_api_e2e_smoke.transaction.atomic", nullcontext)
+    monkeypatch.setattr("scripts.live_api_e2e_smoke.transaction.set_rollback", rollbacks.append)
+
+    assert run_live_api_e2e_smoke() is receipt
+    assert opt_ins == ["LIVE_SOURCE_E2E_SMOKE"]
+    assert rollbacks == [True]
+
+
+def test_live_browser_fixture_rejects_missing_committed_roots(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "scripts.live_api_e2e_smoke._require_disposable_environment",
+        lambda _opt_in: None,
+    )
+    monkeypatch.setattr(
+        "scripts.live_api_e2e_smoke._execute_live_flow",
+        lambda: LiveSmokeReceipt(10, 36, 1, 9),
+    )
+    monkeypatch.setattr("scripts.live_api_e2e_smoke._root_rows_exist", lambda: False)
+    monkeypatch.setattr("scripts.live_api_e2e_smoke.transaction.atomic", nullcontext)
+
+    with pytest.raises(LiveSmokeFailure) as failure:
+        run_live_browser_fixture()
+
+    assert (failure.value.stage, failure.value.code) == (
+        "FIXTURE",
+        "fixture_persistence_missing",
+    )
+
+
+def test_live_browser_fixture_requires_a_selection_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "scripts.live_api_e2e_smoke._require_disposable_environment",
+        lambda _opt_in: None,
+    )
+    monkeypatch.setattr(
+        "scripts.live_api_e2e_smoke._execute_live_flow",
+        lambda: LiveSmokeReceipt(1, 36, 1, 9),
+    )
+    monkeypatch.setattr("scripts.live_api_e2e_smoke._root_rows_exist", lambda: True)
+    monkeypatch.setattr("scripts.live_api_e2e_smoke.transaction.atomic", nullcontext)
+
+    with pytest.raises(LiveSmokeFailure) as failure:
+        run_live_browser_fixture()
+
+    assert (failure.value.stage, failure.value.code) == (
+        "FIXTURE",
+        "fixture_selection_candidate_missing",
+    )

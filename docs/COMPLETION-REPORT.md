@@ -336,9 +336,9 @@ scheduler·traffic 검증을 대신하지 않는다.
 ## 6. Frontend redesign v2 실제 자료 browser evidence
 
 Frontend redesign v2는 `27bb0cc3e9c65309c567fb6b4e08ad8b989907a6`에서 시작했다. browser
-evidence 대상 frontend commit은 `d97888885e8a2e5b8db88005ddf0bf3a336dcdc6`, evidence commit은
-`db906b4`다. 이 절을 포함한 최종 local `main` SHA는 문서가 자기 commit을 참조할 수 없으므로
-완료 응답에서 고정한다.
+evidence 대상 frontend commit은 `6a0118272675a92ef28db7a76f870646f0fbbb56`, evidence commit은
+`81e05296cd74da9dd6a4ec2b2bc4ecac8edb073d`다. 이 절을 포함한 최종 local `main` SHA는 문서가
+자기 commit을 참조할 수 없으므로 완료 응답에서 고정한다.
 
 명시적 opt-in 실행에서 실제 네 KAMIS 공공 API 응답을 normal adapter와 typed persistence에
 통과시키고, disposable PostgreSQL에서 test-only mapping·review·seal·activation으로 local active
@@ -352,6 +352,9 @@ raw response 보존 없음으로 통과했다. browser ready 화면의 가격값
 `360×800`과 `768×1024`의 overflow 0, mobile 첫 catalog record의 fold 안 노출, client script와
 외부 request 0을 고정한다. local axe-core 4.13.0은 ready 6면, validation 400, catalog 503,
 generic 404의 9면에서 WCAG 2/2.1/2.2 A·AA violation 0과 unexpected incomplete 0을 확인했다.
+대형 제목은 self-hosted Hahmlet Bold를 사용하고, `초록장부` wordmark는 Clova Nanum Handwriting
+`야채장수 백금례`의 글자 윤곽만 담은 local SVG다. 원 TTF는 runtime에 포함하지 않으며 외부 font
+요청도 없다.
 
 따라서 application code, local 실제 자료 흐름과 browser 인수 범위에서는 배포 직전 candidate다.
 그러나 자동 mapping·approval과 representative historical scope는 첫 catalog 품목과 한 지역에

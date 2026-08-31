@@ -71,8 +71,7 @@ def range_meter(
         positions = (Decimal("50"),) * 3
     else:
         positions = tuple(
-            (value - scale_minimum) * Decimal("100") / span
-            for value in (minimum, mean, maximum)
+            (value - scale_minimum) * Decimal("100") / span for value in (minimum, mean, maximum)
         )
     return {
         "minimum_x": _svg_number(positions[0]),
@@ -93,13 +92,27 @@ def build_history_chart(data: Sequence[MonthlyChartDatum]) -> dict[str, object]:
         if not datum.provider_low <= datum.provider_mean <= datum.provider_high:
             raise ValueError("Monthly chart ranges are not ordered")
 
+    month_numbers = [_month_number(datum.year_month) for datum in data]
+    if any(
+        current <= previous
+        for previous, current in zip(month_numbers, month_numbers[1:], strict=False)
+    ):
+        raise ValueError("Monthly chart points must be unique and chronological")
+    first_month = month_numbers[0]
+    last_month = month_numbers[-1]
+    month_span = last_month - first_month
+    if month_span < 1:
+        raise ValueError("A monthly chart requires at least two chronological slots")
+
     scale_minimum = min(datum.provider_low for datum in data)
     scale_maximum = max(datum.provider_high for datum in data)
     horizontal_span = _PLOT_RIGHT - _PLOT_LEFT
     vertical_span = _PLOT_BOTTOM - _PLOT_TOP
 
-    def x_position(index: int) -> Decimal:
-        return _PLOT_LEFT + horizontal_span * Decimal(index) / Decimal(len(data) - 1)
+    def x_position(month_number: int) -> Decimal:
+        return _PLOT_LEFT + (
+            horizontal_span * Decimal(month_number - first_month) / Decimal(month_span)
+        )
 
     def y_position(value: Decimal) -> Decimal:
         if scale_maximum == scale_minimum:
@@ -109,12 +122,10 @@ def build_history_chart(data: Sequence[MonthlyChartDatum]) -> dict[str, object]:
         )
 
     indexed_runs: list[list[tuple[int, MonthlyChartDatum]]] = []
-    for index, datum in enumerate(data):
-        if not indexed_runs or _month_number(datum.year_month) != (
-            _month_number(indexed_runs[-1][-1][1].year_month) + 1
-        ):
+    for month_number, datum in zip(month_numbers, data, strict=True):
+        if not indexed_runs or month_number != indexed_runs[-1][-1][0] + 1:
             indexed_runs.append([])
-        indexed_runs[-1].append((index, datum))
+        indexed_runs[-1].append((month_number, datum))
 
     mean_segments: list[dict[str, str]] = []
     range_segments: list[dict[str, str]] = []
@@ -122,25 +133,34 @@ def build_history_chart(data: Sequence[MonthlyChartDatum]) -> dict[str, object]:
         if len(run) < 2:
             continue
         mean_points = [
-            f"{_svg_number(x_position(index))},{_svg_number(y_position(datum.provider_mean))}"
-            for index, datum in run
+            f"{_svg_number(x_position(month_number))},{_svg_number(y_position(datum.provider_mean))}"
+            for month_number, datum in run
         ]
         upper_points = [
-            f"{_svg_number(x_position(index))},{_svg_number(y_position(datum.provider_high))}"
-            for index, datum in run
+            f"{_svg_number(x_position(month_number))},{_svg_number(y_position(datum.provider_high))}"
+            for month_number, datum in run
         ]
         lower_points = [
-            f"{_svg_number(x_position(index))},{_svg_number(y_position(datum.provider_low))}"
-            for index, datum in reversed(run)
+            f"{_svg_number(x_position(month_number))},{_svg_number(y_position(datum.provider_low))}"
+            for month_number, datum in reversed(run)
         ]
         mean_segments.append({"points": " ".join(mean_points)})
         range_segments.append({"points": " ".join((*upper_points, *lower_points))})
     point_context = [
         {
-            "x": _svg_number(x_position(index)),
+            "x": _svg_number(x_position(month_number)),
             "y": _svg_number(y_position(datum.provider_mean)),
         }
-        for index, datum in enumerate(data)
+        for month_number, datum in zip(month_numbers, data, strict=True)
+    ]
+    present_months = set(month_numbers)
+    gap_markers = [
+        {
+            "x": _svg_number(x_position(month_number)),
+            "label": _month_label(month_number),
+        }
+        for month_number in range(first_month, last_month + 1)
+        if month_number not in present_months
     ]
 
     tick_values = (
@@ -159,14 +179,14 @@ def build_history_chart(data: Sequence[MonthlyChartDatum]) -> dict[str, object]:
         }
         for value in tick_values
     ]
-    tick_indexes = sorted({0, len(data) // 2, len(data) - 1})
+    tick_months = sorted({first_month, first_month + month_span // 2, last_month})
     x_ticks = [
         {
-            "x": _svg_number(x_position(index)),
+            "x": _svg_number(x_position(month_number)),
             "y": "268",
-            "label": f"{data[index].year_month[:4]}.{data[index].year_month[4:]}",
+            "label": _month_label(month_number),
         }
-        for index in tick_indexes
+        for month_number in tick_months
     ]
     return {
         "view_box": f"0 0 {_svg_number(_CHART_WIDTH)} {_svg_number(_CHART_HEIGHT)}",
@@ -175,6 +195,7 @@ def build_history_chart(data: Sequence[MonthlyChartDatum]) -> dict[str, object]:
         "range_segments": range_segments,
         "mean_segments": mean_segments,
         "points": point_context,
+        "gap_markers": gap_markers,
     }
 
 
@@ -186,3 +207,8 @@ def _svg_number(value: Decimal) -> str:
 def _month_number(value: str) -> int:
     iso, _label = format_year_month(value)
     return int(iso[:4]) * 12 + int(iso[5:]) - 1
+
+
+def _month_label(value: int) -> str:
+    year, zero_based_month = divmod(value, 12)
+    return f"{year:04d}.{zero_based_month + 1:02d}"

@@ -66,6 +66,8 @@ _QA_STATE_MESSAGES: Final = {
 def catalog(request: HttpRequest) -> HttpResponse:
     form = CatalogForm(request.GET if request.GET else None)
     if form.is_bound and not form.is_valid():
+        error_fields = set(form.errors)
+        needs_generic_summary = not error_fields.issubset({"q", "category"})
         context = _catalog_base_context(category="", period="week", direction="all", sort="name")
         context.update(
             {
@@ -78,14 +80,18 @@ def catalog(request: HttpRequest) -> HttpResponse:
                 "direction_error": "direction" in form.errors,
                 "sort_error": "sort" in form.errors,
                 "filters_open": True,
-                "validation_errors": _validation_errors(
-                    form,
-                    {
-                        "q": "catalog-query",
-                        "period": "catalog-period",
-                        "direction": "catalog-direction",
-                        "sort": "catalog-sort",
-                    },
+                "validation_errors": (
+                    _validation_errors(
+                        form,
+                        {
+                            "q": "catalog-query",
+                            "period": "catalog-period",
+                            "direction": "catalog-direction",
+                            "sort": "catalog-sort",
+                        },
+                    )
+                    if needs_generic_summary
+                    else []
                 ),
                 "results": [],
             }

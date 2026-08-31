@@ -75,8 +75,6 @@ def record_historical_review_decision(
     candidate = HistoricalCollectionReviewDecision(id=decision_id, **fields)
     candidate._review_write = True
     _set_historical_review_token(decision_id)
-    try:
-        candidate.save()
-    finally:
-        _set_historical_review_token(None)
+    candidate.save()
+    _set_historical_review_token(None)
     return candidate, True

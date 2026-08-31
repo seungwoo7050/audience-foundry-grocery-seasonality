@@ -51,11 +51,19 @@ class HistoricalRetailPublicationRevision(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     sealed_at = models.DateTimeField(null=True, blank=True)
 
+    _seal_write = False
+
     class Meta:
         constraints = [
             models.UniqueConstraint(
                 fields=("typed_fact_set_sha256", "public_copy_revision"),
                 name="grocery_history_publication_set_copy_uniq",
+            ),
+            models.CheckConstraint(
+                condition=~Q(monthly_review=F("regional_review"))
+                & ~Q(monthly_review=F("market_review"))
+                & ~Q(regional_review=F("market_review")),
+                name="grocery_history_publication_reviews_distinct",
             ),
             models.CheckConstraint(
                 condition=Q(code_manifest_sha256__regex=SHA256_PATTERN)
@@ -98,10 +106,41 @@ class HistoricalRetailPublicationRevision(models.Model):
         return f"HISTORICAL_RETAIL:{self.typed_fact_set_sha256}:{self.public_copy_revision}"
 
     def save(self, *args: Any, **kwargs: Any) -> None:
-        if not self._state.adding:
-            raise ValidationError("Historical publication revisions are immutable.")
+        if not self._state.adding or not self._seal_write or self.sealed_at is not None:
+            raise ValidationError("Historical publication revisions use the seal service.")
         self.full_clean()
         super().save(*args, **kwargs)
 
     def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
         raise ValidationError("Historical publication revisions are immutable.")
+
+    def clean(self) -> None:
+        super().clean()
+        reviews = (
+            (self.monthly_review_id, "monthly_review", "MONTHLY"),
+            (self.regional_review_id, "regional_review", "REGIONAL_DAILY"),
+            (self.market_review_id, "market_review", "MARKET_DAILY"),
+        )
+        review_ids = [review_id for review_id, _name, _kind in reviews if review_id]
+        if len(review_ids) != len(set(review_ids)):
+            raise ValidationError("Historical publication reviews must be distinct.")
+        for review_id, attribute, expected_kind in reviews:
+            if not review_id:
+                continue
+            review = getattr(self, attribute)
+            collection = review.collection
+            if (
+                review.decision != HistoricalCollectionReviewDecision.Decision.APPROVE
+                or collection.kind != expected_kind
+                or collection.state != "VALIDATED"
+                or review.approved_result_sha256 != collection.result_sha256
+                or review.approved_partition_manifest_sha256
+                != collection.partition_manifest_sha256
+                or collection.code_manifest_sha256 != self.code_manifest_sha256
+                or HistoricalCollectionReviewDecision.objects.filter(
+                    supersedes_id=review.id
+                ).exists()
+            ):
+                raise ValidationError(
+                    "Historical publication requires current exact approved reviews."
+                )

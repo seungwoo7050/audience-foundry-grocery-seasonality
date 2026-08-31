@@ -11,7 +11,7 @@ from datetime import date
 from decimal import Decimal
 
 from django.core.exceptions import ValidationError
-from django.db import transaction
+from django.db import connection, transaction
 from django.utils import timezone
 
 from grocery.historical_collection_models import HistoricalSourceCollection
@@ -19,6 +19,15 @@ from grocery.historical_daily_models import DailyMarketRetailPrice, DailyRegiona
 from grocery.historical_monthly_models import MonthlyRegionalRetailPrice
 from grocery.historical_publication_models import HistoricalRetailPublicationRevision
 from grocery.historical_review_models import HistoricalCollectionReviewDecision
+
+
+def _set_historical_seal_token(revision_id: uuid.UUID | None) -> None:
+    token = "" if revision_id is None else str(revision_id)
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT set_config('grocery.historical_seal_id', %s, true)",
+            [token],
+        )
 
 
 def _month_number(value: str) -> int:
@@ -242,10 +251,16 @@ def seal_historical_publication(
         ):
             raise ValidationError("Historical publication replay conflicts with stored evidence.")
         return existing
+    candidate._seal_write = True
+    _set_historical_seal_token(candidate.id)
     candidate.save()
-    if HistoricalRetailPublicationRevision.objects.filter(
-        pk=candidate.id, sealed_at__isnull=True
-    ).update(sealed_at=timezone.now()) != 1:
+    if (
+        HistoricalRetailPublicationRevision.objects.filter(
+            pk=candidate.id, sealed_at__isnull=True
+        ).update(sealed_at=timezone.now())
+        != 1
+    ):
         raise ValidationError("Historical publication seal did not affect one revision.")
+    _set_historical_seal_token(None)
     candidate.refresh_from_db()
     return candidate

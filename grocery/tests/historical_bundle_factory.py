@@ -123,7 +123,7 @@ def _approve(
 
 
 def create_reviewed_historical_bundle() -> ReviewedHistoricalBundle:
-    recent = create_series()
+    recent = create_series(item_name="양배추", variety_name="양배추")
     series = HistoricalRetailSeriesKey.objects.create(
         recent_series=recent,
         series_identity_sha256=price_series_identity_sha256(recent),

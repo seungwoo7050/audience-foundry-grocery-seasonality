@@ -29,16 +29,51 @@
 
       {% include "grocery/_publication_summary.html" with publication=publication publication_label="선택 목록 공개 자료 정보" %}
 
+      <section class="selection-add" aria-labelledby="selection-add-heading">
+        <div class="selection-add__heading">
+          <p class="eyebrow">현재 목록에 이어서</p>
+          <h2 id="selection-add-heading">품목 추가</h2>
+          <p>품종·등급·판매 단위를 확인하고 한 품목을 더 담으세요.</p>
+        </div>
+
+        {% if selection_limit_reached %}
+          <p class="selection-add__status" role="status">
+            <strong>다섯 품목을 모두 선택했습니다.</strong>
+            다른 품목을 담으려면 먼저 목록에서 하나를 빼세요.
+          </p>
+        {% elif can_add_selection and selection_candidates %}
+          <form class="selection-add__form" action="{{ selection_form_action|default:'/selection/' }}" method="get">
+            {% for item in items %}
+              <input type="hidden" name="series" value="{{ item.series_value }}">
+            {% endfor %}
+            <div class="field-group">
+              <label for="selection-add-item">추가할 품목</label>
+              <p id="selection-add-hint" class="field-hint">현재 목록의 마지막에 추가합니다. 최대 다섯 품목까지 담을 수 있습니다.</p>
+              <select id="selection-add-item" name="series" required aria-describedby="selection-add-hint">
+                <option value="">품목을 선택하세요</option>
+                {% for candidate in selection_candidates %}
+                  <option value="{{ candidate.value }}">{{ candidate.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <button class="button button--primary" type="submit">선택 목록에 추가</button>
+          </form>
+        {% else %}
+          <p class="selection-add__status" role="status">현재 목록에 더 추가할 수 있는 공개 품목이 없습니다.</p>
+        {% endif %}
+      </section>
+
       {% if items %}
         <section class="selection-section" aria-labelledby="selection-heading">
           <div class="section-heading selection-section__heading">
             <h2 id="selection-heading">최근 조사값</h2>
             {% if result_count_label %}<p class="result-count">{{ result_count_label }}</p>{% endif %}
           </div>
-          <div class="selection-actions">
-            <a href="{{ catalog_url|default:'/' }}">품목 더 찾기</a>
-            {% if clear_url %}<a href="{{ clear_url }}">선택 모두 비우기</a>{% endif %}
-          </div>
+          {% if clear_url %}
+            <div class="selection-actions">
+              <a href="{{ clear_url }}">선택 모두 비우기</a>
+            </div>
+          {% endif %}
 
           <ol class="selection-list">
             {% for item in items %}

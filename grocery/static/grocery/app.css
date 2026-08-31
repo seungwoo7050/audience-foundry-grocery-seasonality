@@ -123,8 +123,7 @@ dd {
   margin-top: 0;
 }
 
-h1,
-.brand__name {
+h1 {
   font-family: "Hahmlet", serif;
   font-weight: 700;
   line-height: 1.18;
@@ -268,8 +267,13 @@ h4 {
 }
 
 .brand__name {
-  font-size: 1.34rem;
-  letter-spacing: -0.03em;
+  display: block;
+  line-height: 0;
+}
+
+.brand-wordmark {
+  width: 4.8rem;
+  height: auto;
 }
 
 .brand__description {
@@ -2169,8 +2173,8 @@ select[aria-invalid="true"] {
     height: 2.4rem;
   }
 
-  .brand__name {
-    font-size: 1.2rem;
+  .brand-wordmark {
+    width: 4.45rem;
   }
 
   .brand__description {

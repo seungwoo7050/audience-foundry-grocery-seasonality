@@ -175,7 +175,8 @@ def test_catalog_renders_brand_semantic_search_and_grouped_ledger() -> None:
     assert 'href="#main-content"' in html
     assert '<main id="main-content"' in html
     assert 'src="/static/grocery/brand-mark.svg"' in html
-    assert '<span class="brand__name">초록장부</span>' in html
+    assert 'src="/static/grocery/brand-wordmark.svg"' in html
+    assert '<span class="visually-hidden">초록장부</span>' in html
     assert '<span class="brand__description">채소·과일 소매 조사값</span>' in html
     assert 'role="search"' in html
     assert '<label for="catalog-query">품목명</label>' in html

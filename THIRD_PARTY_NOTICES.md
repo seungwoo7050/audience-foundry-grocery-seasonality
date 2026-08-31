@@ -18,7 +18,8 @@ digest를 함께 고정한다. 이 고지는 각 upstream license 원문을 대�
 | tzdata | `2026.3` | Windows 조건부 timezone data | `github.com/python/tzdata` | Apache-2.0 |
 | PostgreSQL official image | `18.6` | local DB·migration·restore rehearsal | `docker.io/library/postgres` | PostgreSQL License 및 image 내 고지 |
 | uv | `0.12.6` | Python·dependency·lock 실행 도구 | `github.com/astral-sh/uv` | Apache-2.0 OR MIT |
-| Hahmlet Bold | upstream commit `f9c5dac25d88015e9f0953253cec1a71854b7d24` | wordmark·큰 제목의 self-hosted webfont | `github.com/hyper-type/hahmlet` | SIL Open Font License 1.1 |
+| Hahmlet Bold | upstream commit `f9c5dac25d88015e9f0953253cec1a71854b7d24` | 큰 제목의 self-hosted webfont | `github.com/hyper-type/hahmlet` | SIL Open Font License 1.1 |
+| 나눔손글씨 야채장수 백금례 | official TTF SHA-256 `4e97b0fdc2533c6952d6d67f644abb3554b189574f34834dd65ee4cab4a88fbd` | `초록장부` wordmark outline source | `hangeul.naver.com/font/detail/NanumYaCaeJangSuBaegGeumRye` | SIL Open Font License 1.1 |
 
 개발·검증 환경에는 다음 직접 도구를 사용한다. 이들은 production dependency group에
 포함되지 않는다.
@@ -36,6 +37,7 @@ digest를 함께 고정한다. 이 고지는 각 upstream license 원문을 대�
 | @playwright/cli | `0.1.18` | 실제 Chromium browser E2E·screenshot 검증 | Apache-2.0 |
 | Chromium | `152.0.7977.8` | Playwright가 관리하는 browser 검증 runtime | BSD-style 및 bundled component 고지 |
 | @axe-core/cli | `4.13.0` | 렌더링된 page의 WCAG A·AA 자동 검사 | MPL-2.0 및 bundled third-party 고지 |
+| HarfBuzz `hb-view` | `14.2.1` | 고정 wordmark SVG outline 생성 | MIT |
 
 PostgreSQL image index digest는
 `sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280`다.
@@ -54,3 +56,11 @@ subset하지 않고 `grocery/static/grocery/fonts/hahmlet-bold.woff2`에 포함�
 SHA-256은 `9a5ab61f43a689167d0dea3046003bc3a897f32ab3af7c437add32075c15c948`이며,
 upstream의 완전한 license 원문은 `LICENSES/Hahmlet-OFL-1.1.txt`에 보존한다. 원격 font
 service나 CDN은 사용하지 않는다.
+
+클로바 나눔손글씨 원본 TTF는 네이버 공식 배포 URL
+`hangeul.naver.com/hangeul_static/webfont/clova/NanumYaCaeJangSuBaegGeumRye.ttf`에서 받아
+위 SHA-256으로 확인했다. HarfBuzz `hb-view` 14.2.1로 `초록장부` 네 글자의 outline만
+`grocery/static/grocery/brand-wordmark.svg`에 만들었으며 SVG SHA-256은
+`e93b21dc4e9e78270d356548abe55e7f373ffce4fc1f8ed084751da877a1f86e`다. 원본 TTF나 원격
+font service는 배포하지 않는다. 네이버의 완전한 license 원문은
+`LICENSES/Naver-Nanum-OFL-1.1.txt`에 보존한다.

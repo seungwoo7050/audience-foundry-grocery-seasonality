@@ -34,6 +34,7 @@ class StaticDeliverySettingsTests(SimpleTestCase):
         for asset in (
             "grocery/app.css",
             "grocery/brand-mark.svg",
+            "grocery/brand-wordmark.svg",
             "grocery/favicon.svg",
             "grocery/fonts/hahmlet-bold.woff2",
         ):
@@ -48,15 +49,21 @@ class StaticDeliverySettingsTests(SimpleTestCase):
         self.assertNotIn("http://", css)
         self.assertNotIn("https://", css)
 
-    def test_self_hosted_heading_font_matches_pinned_upstream_provenance(self) -> None:
+    def test_self_hosted_brand_type_matches_pinned_upstream_provenance(self) -> None:
         base_dir = Path(settings.BASE_DIR)
         font_path = base_dir / "grocery/static/grocery/fonts/hahmlet-bold.woff2"
         license_path = base_dir / "LICENSES/Hahmlet-OFL-1.1.txt"
+        wordmark_path = base_dir / "grocery/static/grocery/brand-wordmark.svg"
+        naver_license_path = base_dir / "LICENSES/Naver-Nanum-OFL-1.1.txt"
         notices_path = base_dir / "THIRD_PARTY_NOTICES.md"
 
         self.assertEqual(
             hashlib.sha256(font_path.read_bytes()).hexdigest(),
             "9a5ab61f43a689167d0dea3046003bc3a897f32ab3af7c437add32075c15c948",
+        )
+        self.assertEqual(
+            hashlib.sha256(wordmark_path.read_bytes()).hexdigest(),
+            "e93b21dc4e9e78270d356548abe55e7f373ffce4fc1f8ed084751da877a1f86e",
         )
         license_text = license_path.read_text(encoding="utf-8")
         self.assertIn(
@@ -64,9 +71,17 @@ class StaticDeliverySettingsTests(SimpleTestCase):
             license_text,
         )
         self.assertIn("SIL OPEN FONT LICENSE Version 1.1", license_text)
+        naver_license_text = naver_license_path.read_text(encoding="utf-8")
+        self.assertIn("Copyright (c) 2010, NAVER Corporation", naver_license_text)
+        self.assertIn("SIL OPEN FONT LICENSE Version 1.1", naver_license_text)
         notices = notices_path.read_text(encoding="utf-8")
         self.assertIn("f9c5dac25d88015e9f0953253cec1a71854b7d24", notices)
         self.assertIn("LICENSES/Hahmlet-OFL-1.1.txt", notices)
+        self.assertIn(
+            "4e97b0fdc2533c6952d6d67f644abb3554b189574f34834dd65ee4cab4a88fbd",
+            notices,
+        )
+        self.assertIn("LICENSES/Naver-Nanum-OFL-1.1.txt", notices)
 
     def test_public_frontend_contains_no_raster_photo_assets(self) -> None:
         static_root = Path(settings.BASE_DIR, "grocery", "static", "grocery")
@@ -81,7 +96,7 @@ class StaticDeliverySettingsTests(SimpleTestCase):
         self.assertEqual(raster_assets, [])
 
     def test_svg_assets_have_no_script_foreign_object_or_external_reference(self) -> None:
-        for asset_name in ("brand-mark.svg", "favicon.svg"):
+        for asset_name in ("brand-mark.svg", "brand-wordmark.svg", "favicon.svg"):
             path = Path(settings.BASE_DIR, "grocery", "static", "grocery", asset_name)
             # This is a repository-owned static fixture, not untrusted XML input.
             root = ElementTree.parse(path).getroot()  # noqa: S314

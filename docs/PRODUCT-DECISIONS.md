@@ -177,3 +177,12 @@ CAPTCHA·quota 우회와 다른 가격 source의 자동 보충은 pivot이 아�
 고정 결정 변경에는 source evidence, 사용자 문구, data compatibility, privacy·license,
 schema·migration, acceptance와 rollback 영향을 기록합니다. 두 실제 vertical에서
 안정된 중복이 확인되기 전에는 공용 ingestion package를 추출하지 않습니다.
+
+## vNext 승인 결정
+
+제품 소유자는 2026-08-31(KST)에 공공데이터포털 `15156060`, `15156062`, `15156065`
+활용신청 완료와 개발계정 live gate를 승인했습니다. 지역 비교, 월별 과거 패턴, 시장별
+근거, 검증된 전체 series coverage, URL 기반 최대 5개 선택 목록과 안전한 GET state는
+[vNext 제품·source 계약](VNEXT-PRODUCT-CONTRACT.md)이 이 문서의 첫 MVP 비목표를 명시적으로
+대체하는 범위에서만 허용합니다. source gate 실패 시 이 승인은 dependent 구현 근거가 되지
+않으며 기존 `RECENT_RETAIL` 계약은 그대로 유지합니다.

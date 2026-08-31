@@ -111,9 +111,10 @@ def test_historical_fetch_reuses_bounded_ordered_pagination() -> None:
     assert [row["synthetic"] for row in result.rows] == ["first", "second"]
     assert [receipt.requested_page_number for receipt in result.page_receipts] == [1, 2]
     assert result.call_count == 2
-    assert result.request_scope_sha256 == prepare_historical_request(
-        HistoricalDataset.REGIONAL, _regional_query()
-    ).scope_sha256
+    assert (
+        result.request_scope_sha256
+        == prepare_historical_request(HistoricalDataset.REGIONAL, _regional_query()).scope_sha256
+    )
 
 
 def test_invalid_query_is_translated_before_any_request() -> None:
@@ -123,9 +124,7 @@ def test_invalid_query_is_translated_before_any_request() -> None:
         KamisHttpClient(open_url=opener, sleep=lambda _: None).fetch_historical_prices(
             HistoricalDataset.REGIONAL,
             "synthetic-key",
-            query=HistoricalPriceQuery(
-                start="20260801", end="20260831", category_code="200"
-            ),
+            query=HistoricalPriceQuery(start="20260801", end="20260831", category_code="200"),
         )
 
     assert opener.requests == []
@@ -151,9 +150,7 @@ def test_wrapperless_json_is_rejected() -> None:
         KamisHttpClient(open_url=opener, sleep=lambda _: None).fetch_historical_prices(
             HistoricalDataset.MARKET,
             "synthetic-key",
-            query=HistoricalPriceQuery(
-                start="20260801", end="20260831", category_code="200"
-            ),
+            query=HistoricalPriceQuery(start="20260801", end="20260831", category_code="200"),
         )
 
 

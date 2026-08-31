@@ -129,9 +129,7 @@ class HistoricalRowValidator:
     def positive_decimal(self, field: str) -> Decimal:
         value = self._decimal(field)
         if value <= 0:
-            raise KamisParseError(
-                "invalid_positive_decimal", row_index=self.row_index, field=field
-            )
+            raise KamisParseError("invalid_positive_decimal", row_index=self.row_index, field=field)
         return value
 
     def positive_price(self, field: str) -> Decimal:
@@ -139,9 +137,7 @@ class HistoricalRowValidator:
         source_text = self.row[field]
         fraction = source_text.partition(".")[2]
         if len(fraction) > 2 or value > _MAX_PRICE:
-            raise KamisParseError(
-                "invalid_price_precision", row_index=self.row_index, field=field
-            )
+            raise KamisParseError("invalid_price_precision", row_index=self.row_index, field=field)
         return value
 
     def nonnegative_decimal(self, field: str) -> Decimal:

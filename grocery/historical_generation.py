@@ -48,10 +48,7 @@ def _validate_monthly_scope(
             for name, attribute in filter_fields.items()
         ):
             raise ValidationError("Historical monthly identity is outside its prepared request.")
-        if (
-            "cond[sgg_cd::EQ]" in conditions
-            and row.region.code != conditions["cond[sgg_cd::EQ]"]
-        ):
+        if "cond[sgg_cd::EQ]" in conditions and row.region.code != conditions["cond[sgg_cd::EQ]"]:
             raise ValidationError("Historical monthly region is outside its prepared request.")
     return month_min, month_max
 

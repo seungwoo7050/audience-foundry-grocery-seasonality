@@ -134,8 +134,7 @@ class HistoricalRetailPublicationRevision(models.Model):
                 or collection.kind != expected_kind
                 or collection.state != "VALIDATED"
                 or review.approved_result_sha256 != collection.result_sha256
-                or review.approved_partition_manifest_sha256
-                != collection.partition_manifest_sha256
+                or review.approved_partition_manifest_sha256 != collection.partition_manifest_sha256
                 or collection.code_manifest_sha256 != self.code_manifest_sha256
                 or HistoricalCollectionReviewDecision.objects.filter(
                     supersedes_id=review.id

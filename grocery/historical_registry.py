@@ -56,9 +56,9 @@ def load_historical_dimension_registry(
                 row_index=0,
             )
             item_names[(series.category_code, series.item_code)] = series.item_name
-            variety_names[
-                (series.category_code, series.item_code, series.variety_code)
-            ] = series.variety_name
+            variety_names[(series.category_code, series.item_code, series.variety_code)] = (
+                series.variety_name
+            )
             series_code_key = (
                 series.category_code,
                 series.item_code,

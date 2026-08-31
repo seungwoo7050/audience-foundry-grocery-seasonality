@@ -225,10 +225,14 @@ class HistoricalSourceCollectionPart(models.Model):
             raise ValidationError("Parts can only be attached to a started collection.")
         if self.parse_run_id and self.parse_run.status != ParseRun.Status.VALIDATED:
             raise ValidationError("Collection parts require a validated parse run.")
-        if self.collection_id and self.parse_run_id and not FetchAttempt.objects.filter(
-            source_configuration_id=self.collection.source_configuration_id,
-            artifact_id=self.parse_run.artifact_id,
-            state=FetchAttempt.State.SUCCEEDED,
-            request_scope_sha256=self.partition_scope_sha256,
-        ).exists():
+        if (
+            self.collection_id
+            and self.parse_run_id
+            and not FetchAttempt.objects.filter(
+                source_configuration_id=self.collection.source_configuration_id,
+                artifact_id=self.parse_run.artifact_id,
+                state=FetchAttempt.State.SUCCEEDED,
+                request_scope_sha256=self.partition_scope_sha256,
+            ).exists()
+        ):
             raise ValidationError("Collection part does not match its successful request scope.")

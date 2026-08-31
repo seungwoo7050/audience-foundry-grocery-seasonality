@@ -168,8 +168,7 @@ def test_catalog_validation_reveals_and_associates_advanced_controls() -> None:
     assert '<details class="catalog-options" open>' in html
     query_control = html[html.index('id="catalog-query"') :]
     assert (
-        'aria-describedby="catalog-query-hint validation-title"'
-        in query_control.split(">", 1)[0]
+        'aria-describedby="catalog-query-hint validation-title"' in query_control.split(">", 1)[0]
     )
     for target in ("catalog-period", "catalog-direction", "catalog-sort"):
         assert f'href="#{target}"' in html

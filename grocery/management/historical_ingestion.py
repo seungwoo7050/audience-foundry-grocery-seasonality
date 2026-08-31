@@ -139,9 +139,7 @@ class HistoricalIngestionCommand(BaseCommand):
 def region_scopes(options: dict[str, object], *, required: bool) -> tuple[str | None, ...]:
     raw = options.get("region_code")
     regions = (
-        tuple(value for value in raw if isinstance(value, str))
-        if isinstance(raw, list)
-        else ()
+        tuple(value for value in raw if isinstance(value, str)) if isinstance(raw, list) else ()
     )
     if required and not regions:
         raise HistoricalContractError("missing_historical_region")

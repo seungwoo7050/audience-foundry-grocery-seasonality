@@ -29,13 +29,19 @@ def test_generation_resolves_only_exact_reviewed_identity_and_manifest(db: None)
     )
 
     assert resolve_historical_series(identity, code_manifest_sha256="a" * 64) == bundle.series
-    assert resolve_historical_region(
-        RegionObservation(bundle.region.region_code, bundle.region.region_name)
-    ) == bundle.region
-    assert len(
-        historical_configuration_sha256(
-            dataset=HistoricalDataset.MONTHLY,
-            parser_revision="kamis-15156060-v1",
-            code_manifest_sha256="a" * 64,
+    assert (
+        resolve_historical_region(
+            RegionObservation(bundle.region.region_code, bundle.region.region_name)
         )
-    ) == 64
+        == bundle.region
+    )
+    assert (
+        len(
+            historical_configuration_sha256(
+                dataset=HistoricalDataset.MONTHLY,
+                parser_revision="kamis-15156060-v1",
+                code_manifest_sha256="a" * 64,
+            )
+        )
+        == 64
+    )

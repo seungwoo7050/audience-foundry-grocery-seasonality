@@ -4,14 +4,49 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('grocery', '0020_bind_historical_dataset_modes'),
+        ("grocery", "0020_bind_historical_dataset_modes"),
     ]
 
     operations = [
         migrations.AddConstraint(
-            model_name='sourceconfiguration',
-            constraint=models.CheckConstraint(condition=models.Q(models.Q(('authentication_mode', 'DATA_GO_KR_SERVICE_KEY'), ('dataset_id', '15156060'), ('endpoint_host', 'apis.data.go.kr'), ('endpoint_path', '/B552845/perYearMonth/price'), ('logical_secret_name', 'KAMIS_API_KEY'), ('publication_mode', 'HISTORICAL_MONTHLY')), models.Q(('authentication_mode', 'DATA_GO_KR_SERVICE_KEY'), ('dataset_id', '15156062'), ('endpoint_host', 'apis.data.go.kr'), ('endpoint_path', '/B552845/perRegion/price'), ('logical_secret_name', 'KAMIS_API_KEY'), ('publication_mode', 'HISTORICAL_REGIONAL')), models.Q(('authentication_mode', 'DATA_GO_KR_SERVICE_KEY'), ('dataset_id', '15156065'), ('endpoint_host', 'apis.data.go.kr'), ('endpoint_path', '/B552845/periodRetail/price'), ('logical_secret_name', 'KAMIS_API_KEY'), ('publication_mode', 'HISTORICAL_MARKET')), models.Q(('publication_mode__in', ('HISTORICAL_MONTHLY', 'HISTORICAL_REGIONAL', 'HISTORICAL_MARKET')), _negated=True), _connector='OR'), name='grocery_source_historical_endpoint'),
+            model_name="sourceconfiguration",
+            constraint=models.CheckConstraint(
+                condition=models.Q(
+                    models.Q(
+                        ("authentication_mode", "DATA_GO_KR_SERVICE_KEY"),
+                        ("dataset_id", "15156060"),
+                        ("endpoint_host", "apis.data.go.kr"),
+                        ("endpoint_path", "/B552845/perYearMonth/price"),
+                        ("logical_secret_name", "KAMIS_API_KEY"),
+                        ("publication_mode", "HISTORICAL_MONTHLY"),
+                    ),
+                    models.Q(
+                        ("authentication_mode", "DATA_GO_KR_SERVICE_KEY"),
+                        ("dataset_id", "15156062"),
+                        ("endpoint_host", "apis.data.go.kr"),
+                        ("endpoint_path", "/B552845/perRegion/price"),
+                        ("logical_secret_name", "KAMIS_API_KEY"),
+                        ("publication_mode", "HISTORICAL_REGIONAL"),
+                    ),
+                    models.Q(
+                        ("authentication_mode", "DATA_GO_KR_SERVICE_KEY"),
+                        ("dataset_id", "15156065"),
+                        ("endpoint_host", "apis.data.go.kr"),
+                        ("endpoint_path", "/B552845/periodRetail/price"),
+                        ("logical_secret_name", "KAMIS_API_KEY"),
+                        ("publication_mode", "HISTORICAL_MARKET"),
+                    ),
+                    models.Q(
+                        (
+                            "publication_mode__in",
+                            ("HISTORICAL_MONTHLY", "HISTORICAL_REGIONAL", "HISTORICAL_MARKET"),
+                        ),
+                        _negated=True,
+                    ),
+                    _connector="OR",
+                ),
+                name="grocery_source_historical_endpoint",
+            ),
         ),
     ]

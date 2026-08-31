@@ -7,45 +7,72 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('grocery', '0018_historical_publication_activation'),
+        ("grocery", "0018_historical_publication_activation"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='dailymarketretailprice',
-            name='provider_price',
-            field=models.DecimalField(decimal_places=2, max_digits=14, validators=[django.core.validators.MinValueValidator(Decimal('0.01'))]),
+            model_name="dailymarketretailprice",
+            name="provider_price",
+            field=models.DecimalField(
+                decimal_places=2,
+                max_digits=14,
+                validators=[django.core.validators.MinValueValidator(Decimal("0.01"))],
+            ),
         ),
         migrations.AlterField(
-            model_name='dailyregionalretailprice',
-            name='provider_high',
-            field=models.DecimalField(decimal_places=2, max_digits=14, validators=[django.core.validators.MinValueValidator(Decimal('0.01'))]),
+            model_name="dailyregionalretailprice",
+            name="provider_high",
+            field=models.DecimalField(
+                decimal_places=2,
+                max_digits=14,
+                validators=[django.core.validators.MinValueValidator(Decimal("0.01"))],
+            ),
         ),
         migrations.AlterField(
-            model_name='dailyregionalretailprice',
-            name='provider_low',
-            field=models.DecimalField(decimal_places=2, max_digits=14, validators=[django.core.validators.MinValueValidator(Decimal('0.01'))]),
+            model_name="dailyregionalretailprice",
+            name="provider_low",
+            field=models.DecimalField(
+                decimal_places=2,
+                max_digits=14,
+                validators=[django.core.validators.MinValueValidator(Decimal("0.01"))],
+            ),
         ),
         migrations.AlterField(
-            model_name='dailyregionalretailprice',
-            name='provider_mean',
-            field=models.DecimalField(decimal_places=2, max_digits=14, validators=[django.core.validators.MinValueValidator(Decimal('0.01'))]),
+            model_name="dailyregionalretailprice",
+            name="provider_mean",
+            field=models.DecimalField(
+                decimal_places=2,
+                max_digits=14,
+                validators=[django.core.validators.MinValueValidator(Decimal("0.01"))],
+            ),
         ),
         migrations.AlterField(
-            model_name='monthlyregionalretailprice',
-            name='provider_high',
-            field=models.DecimalField(decimal_places=2, max_digits=14, validators=[django.core.validators.MinValueValidator(Decimal('0.01'))]),
+            model_name="monthlyregionalretailprice",
+            name="provider_high",
+            field=models.DecimalField(
+                decimal_places=2,
+                max_digits=14,
+                validators=[django.core.validators.MinValueValidator(Decimal("0.01"))],
+            ),
         ),
         migrations.AlterField(
-            model_name='monthlyregionalretailprice',
-            name='provider_low',
-            field=models.DecimalField(decimal_places=2, max_digits=14, validators=[django.core.validators.MinValueValidator(Decimal('0.01'))]),
+            model_name="monthlyregionalretailprice",
+            name="provider_low",
+            field=models.DecimalField(
+                decimal_places=2,
+                max_digits=14,
+                validators=[django.core.validators.MinValueValidator(Decimal("0.01"))],
+            ),
         ),
         migrations.AlterField(
-            model_name='monthlyregionalretailprice',
-            name='provider_mean',
-            field=models.DecimalField(decimal_places=2, max_digits=14, validators=[django.core.validators.MinValueValidator(Decimal('0.01'))]),
+            model_name="monthlyregionalretailprice",
+            name="provider_mean",
+            field=models.DecimalField(
+                decimal_places=2,
+                max_digits=14,
+                validators=[django.core.validators.MinValueValidator(Decimal("0.01"))],
+            ),
         ),
     ]

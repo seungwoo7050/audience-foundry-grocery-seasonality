@@ -66,9 +66,7 @@ def test_historical_seal_command_has_release_lock_and_no_actor_override() -> Non
     CONTROL_PLANE_OPERATIONS_ENABLED=False,
 )
 def test_historical_transition_command_rejects_negative_cas_version() -> None:
-    parser = TransitionCommand().create_parser(
-        "manage.py", "transition_historical_publication"
-    )
+    parser = TransitionCommand().create_parser("manage.py", "transition_historical_publication")
     destinations = {action.dest for action in parser._actions}
     assert "expected_release_sha" in destinations
     assert not {"actor", "actor_id", "username"} & destinations

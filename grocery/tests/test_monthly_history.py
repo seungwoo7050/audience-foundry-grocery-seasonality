@@ -25,12 +25,15 @@ def test_monthly_row_parses_all_source_facts_without_derivation() -> None:
     assert row.pyy_lwprc == Decimal("700")
     assert row.source_recorded_at_raw == "2026-08-31 12:00:00"
     assert len(row.source_row_hash) == len(result.result_hash) == 64
-    assert not {
-        "trend",
-        "seasonality",
-        "market_type",
-        "computed_average",
-    } & row.canonical_data().keys()
+    assert (
+        not {
+            "trend",
+            "seasonality",
+            "market_type",
+            "computed_average",
+        }
+        & row.canonical_data().keys()
+    )
 
 
 def test_monthly_result_is_deterministic_across_input_and_mapping_order() -> None:
@@ -65,9 +68,7 @@ def test_unknown_or_non_string_monthly_fields_do_not_echo_values() -> None:
         parse_monthly_price_rows([unknown], registry=historical_registry())
     assert "synthetic-secret" not in str(raised.value)
 
-    wrong_type: dict[str, object] = {
-        field: value for field, value in monthly_row().items()
-    }
+    wrong_type: dict[str, object] = {field: value for field, value in monthly_row().items()}
     wrong_type["pmm_avgprc"] = 1000
     with pytest.raises(KamisParseError, match="field_type_drift"):
         parse_monthly_price_rows([wrong_type], registry=historical_registry())

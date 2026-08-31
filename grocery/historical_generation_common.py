@@ -67,12 +67,16 @@ def start_historical_part(
     if ordinal < 1 or ordinal > collection.expected_part_count:
         raise ValidationError("Historical part ordinal is outside its collection plan.")
     artifact = SourceArtifact.objects.select_for_update().get(pk=artifact_id)
-    if not FetchAttempt.objects.select_for_update().filter(
-        source_configuration=collection.source_configuration,
-        artifact=artifact,
-        state=FetchAttempt.State.SUCCEEDED,
-        request_scope_sha256=prepared_request.scope_sha256,
-    ).exists():
+    if (
+        not FetchAttempt.objects.select_for_update()
+        .filter(
+            source_configuration=collection.source_configuration,
+            artifact=artifact,
+            state=FetchAttempt.State.SUCCEEDED,
+            request_scope_sha256=prepared_request.scope_sha256,
+        )
+        .exists()
+    ):
         raise ValidationError("Historical artifact does not belong to the prepared source scope.")
     parse_run, created = ParseRun.objects.get_or_create(
         artifact=artifact,

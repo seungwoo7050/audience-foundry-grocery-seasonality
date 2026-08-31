@@ -26,9 +26,7 @@ def test_seal_binds_complete_three_source_fact_set_and_replays(db: None) -> None
     assert (revision.regional_fact_count, revision.market_fact_count) == (1, 1)
 
     with pytest.raises(DatabaseError), transaction.atomic():
-        HistoricalRetailPublicationRevision.objects.filter(pk=revision.pk).update(
-            series_count=2
-        )
+        HistoricalRetailPublicationRevision.objects.filter(pk=revision.pk).update(series_count=2)
     with pytest.raises(DatabaseError), transaction.atomic():
         HistoricalRetailPublicationRevision.objects.bulk_create(
             [

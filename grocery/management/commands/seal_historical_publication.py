@@ -50,9 +50,7 @@ class Command(BaseCommand):
                 monthly_review_id=require_uuid(options.get("monthly_review_id")),
                 regional_review_id=require_uuid(options.get("regional_review_id")),
                 market_review_id=require_uuid(options.get("market_review_id")),
-                compatibility_hash=require_sha256(
-                    options.get("compatibility_report_sha256")
-                ),
+                compatibility_hash=require_sha256(options.get("compatibility_report_sha256")),
                 expected_release_sha=expected_release_sha,
             )
         except ControlPlaneError as error:

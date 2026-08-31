@@ -65,8 +65,10 @@ class DailyRegionalRetailPrice(HistoricalPriceFact):
         if self.collection_id:
             date_min = self.collection.date_min
             date_max = self.collection.date_max
-            if date_min is None or date_max is None or not (
-                date_min <= self.survey_date <= date_max
+            if (
+                date_min is None
+                or date_max is None
+                or not (date_min <= self.survey_date <= date_max)
             ):
                 raise ValidationError("Regional fact is outside its collection window.")
 
@@ -113,7 +115,9 @@ class DailyMarketRetailPrice(HistoricalPriceFact):
         if self.collection_id:
             date_min = self.collection.date_min
             date_max = self.collection.date_max
-            if date_min is None or date_max is None or not (
-                date_min <= self.survey_date <= date_max
+            if (
+                date_min is None
+                or date_max is None
+                or not (date_min <= self.survey_date <= date_max)
             ):
                 raise ValidationError("Market fact is outside its collection window.")

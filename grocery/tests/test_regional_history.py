@@ -81,9 +81,7 @@ def test_raw_and_converted_range_inversions_fail_independently(field: str, value
 def test_regional_result_is_order_stable_and_duplicate_safe() -> None:
     next_day = regional_row()
     next_day["exmn_ymd"] = "20260830"
-    left = parse_regional_price_rows(
-        [regional_row(), next_day], registry=historical_registry()
-    )
+    left = parse_regional_price_rows([regional_row(), next_day], registry=historical_registry())
     right = parse_regional_price_rows(
         [dict(reversed(tuple(next_day.items()))), regional_row()],
         registry=historical_registry(),

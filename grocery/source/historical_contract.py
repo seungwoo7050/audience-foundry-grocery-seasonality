@@ -59,38 +59,38 @@ class HistoricalEndpointContract:
         )
 
 
-HISTORICAL_ENDPOINT_CONTRACTS: Mapping[
-    HistoricalDataset, HistoricalEndpointContract
-] = MappingProxyType(
-    {
-        HistoricalDataset.MONTHLY: HistoricalEndpointContract(
-            endpoint="https://apis.data.go.kr/B552845/perYearMonth/price",
-            date_field="exmn_ym",
-            allowed_filter_fields=frozenset(
-                {"se_cd", "ctgry_cd", "item_cd", "vrty_cd", "grd_cd", "sgg_cd"}
+HISTORICAL_ENDPOINT_CONTRACTS: Mapping[HistoricalDataset, HistoricalEndpointContract] = (
+    MappingProxyType(
+        {
+            HistoricalDataset.MONTHLY: HistoricalEndpointContract(
+                endpoint="https://apis.data.go.kr/B552845/perYearMonth/price",
+                date_field="exmn_ym",
+                allowed_filter_fields=frozenset(
+                    {"se_cd", "ctgry_cd", "item_cd", "vrty_cd", "grd_cd", "sgg_cd"}
+                ),
+                required_filter_fields=frozenset({"se_cd", "ctgry_cd"}),
+                monthly=True,
             ),
-            required_filter_fields=frozenset({"se_cd", "ctgry_cd"}),
-            monthly=True,
-        ),
-        HistoricalDataset.REGIONAL: HistoricalEndpointContract(
-            endpoint="https://apis.data.go.kr/B552845/perRegion/price",
-            date_field="exmn_ymd",
-            allowed_filter_fields=frozenset(
-                {"se_cd", "ctgry_cd", "item_cd", "vrty_cd", "grd_cd", "sgg_cd"}
+            HistoricalDataset.REGIONAL: HistoricalEndpointContract(
+                endpoint="https://apis.data.go.kr/B552845/perRegion/price",
+                date_field="exmn_ymd",
+                allowed_filter_fields=frozenset(
+                    {"se_cd", "ctgry_cd", "item_cd", "vrty_cd", "grd_cd", "sgg_cd"}
+                ),
+                required_filter_fields=frozenset({"se_cd", "ctgry_cd", "sgg_cd"}),
+                monthly=False,
             ),
-            required_filter_fields=frozenset({"se_cd", "ctgry_cd", "sgg_cd"}),
-            monthly=False,
-        ),
-        HistoricalDataset.MARKET: HistoricalEndpointContract(
-            endpoint="https://apis.data.go.kr/B552845/periodRetail/price",
-            date_field="exmn_ymd",
-            allowed_filter_fields=frozenset(
-                {"ctgry_cd", "item_cd", "vrty_cd", "grd_cd", "sgg_cd", "mrkt_cd"}
+            HistoricalDataset.MARKET: HistoricalEndpointContract(
+                endpoint="https://apis.data.go.kr/B552845/periodRetail/price",
+                date_field="exmn_ymd",
+                allowed_filter_fields=frozenset(
+                    {"ctgry_cd", "item_cd", "vrty_cd", "grd_cd", "sgg_cd", "mrkt_cd"}
+                ),
+                required_filter_fields=frozenset({"ctgry_cd"}),
+                monthly=False,
             ),
-            required_filter_fields=frozenset({"ctgry_cd"}),
-            monthly=False,
-        ),
-    }
+        }
+    )
 )
 
 KAMIS_HISTORICAL_ENDPOINTS: Mapping[HistoricalDataset, str] = MappingProxyType(

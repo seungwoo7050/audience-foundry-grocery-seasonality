@@ -132,9 +132,7 @@ def _validate_market_scope(
             for name, attribute in filters.items()
         ):
             raise ValidationError("Historical market identity is outside its prepared request.")
-        if "cond[sgg_cd::EQ]" in conditions and (
-            row.region.code != conditions["cond[sgg_cd::EQ]"]
-        ):
+        if "cond[sgg_cd::EQ]" in conditions and (row.region.code != conditions["cond[sgg_cd::EQ]"]):
             raise ValidationError("Historical market region is outside its prepared request.")
         if "cond[mrkt_cd::EQ]" in conditions and (
             row.market.code != conditions["cond[mrkt_cd::EQ]"]

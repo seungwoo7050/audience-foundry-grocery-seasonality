@@ -78,15 +78,11 @@ AND grocery_historical_review_matches(
 )
 """.strip()
 
-ALLOW_LAST_KNOWN_GOOD = _activation_guard(
-    f"NEW.operation = 'ROLLBACK' OR ({_CURRENT_REVIEWS})"
-)
+ALLOW_LAST_KNOWN_GOOD = _activation_guard(f"NEW.operation = 'ROLLBACK' OR ({_CURRENT_REVIEWS})")
 RESTORE_CURRENT_REVIEW_REQUIREMENT = _activation_guard(_CURRENT_REVIEWS)
 
 
 class Migration(migrations.Migration):
     dependencies = [("grocery", "0026_guard_historical_activation_cas")]
 
-    operations = [
-        migrations.RunSQL(ALLOW_LAST_KNOWN_GOOD, RESTORE_CURRENT_REVIEW_REQUIREMENT)
-    ]
+    operations = [migrations.RunSQL(ALLOW_LAST_KNOWN_GOOD, RESTORE_CURRENT_REVIEW_REQUIREMENT)]

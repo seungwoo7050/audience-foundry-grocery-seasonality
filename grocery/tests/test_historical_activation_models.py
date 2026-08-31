@@ -102,9 +102,7 @@ def test_historical_activation_is_authorized_idempotent_cas(transactional_db: No
         acceptance_evidence_sha256="7" * 64,
         reason_code="REVIEW_REFRESHED",
         approved_result_sha256=monthly_review.approved_result_sha256,
-        approved_partition_manifest_sha256=(
-            monthly_review.approved_partition_manifest_sha256
-        ),
+        approved_partition_manifest_sha256=(monthly_review.approved_partition_manifest_sha256),
         supersedes_id=monthly_review.id,
     )
     with pytest.raises(ValidationError, match="current reviewed"):

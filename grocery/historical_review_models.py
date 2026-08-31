@@ -151,7 +151,6 @@ class HistoricalCollectionReviewDecision(models.Model):
                 raise ValidationError("Approval requires a validated historical collection.")
             if (
                 self.approved_result_sha256 != collection.result_sha256
-                or self.approved_partition_manifest_sha256
-                != collection.partition_manifest_sha256
+                or self.approved_partition_manifest_sha256 != collection.partition_manifest_sha256
             ):
                 raise ValidationError("Approved hashes must match the reviewed collection.")

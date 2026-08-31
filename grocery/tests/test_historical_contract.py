@@ -13,8 +13,7 @@ from grocery.source.historical_contract import (
 
 def test_approved_dataset_paths_and_retail_scope_are_fixed() -> None:
     assert {
-        dataset.value: contract.path
-        for dataset, contract in HISTORICAL_ENDPOINT_CONTRACTS.items()
+        dataset.value: contract.path for dataset, contract in HISTORICAL_ENDPOINT_CONTRACTS.items()
     } == {
         "15156060": "/B552845/perYearMonth/price",
         "15156062": "/B552845/perRegion/price",

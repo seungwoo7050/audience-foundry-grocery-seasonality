@@ -137,9 +137,7 @@ def test_database_binds_part_scope_and_fact_membership_then_freezes_rows(db: Non
     first_collection.save()
 
     with pytest.raises(DatabaseError), transaction.atomic():
-        MonthlyRegionalRetailPrice.objects.filter(pk=fact.pk).update(
-            provider_mean=Decimal("1300")
-        )
+        MonthlyRegionalRetailPrice.objects.filter(pk=fact.pk).update(provider_mean=Decimal("1300"))
     with pytest.raises(DatabaseError), transaction.atomic():
         HistoricalSourceCollectionPart.objects.filter(pk=first_part.pk).delete()
 

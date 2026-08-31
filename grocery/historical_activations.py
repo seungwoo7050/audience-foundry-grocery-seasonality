@@ -40,9 +40,12 @@ def _target_is_currently_approved(revision: HistoricalRetailPublicationRevision)
         revision.regional_review_id,
         revision.market_review_id,
     )
-    return revision.sealed_at is not None and not HistoricalCollectionReviewDecision.objects.filter(
-        supersedes_id__in=review_ids
-    ).exists()
+    return (
+        revision.sealed_at is not None
+        and not HistoricalCollectionReviewDecision.objects.filter(
+            supersedes_id__in=review_ids
+        ).exists()
+    )
 
 
 @transaction.atomic

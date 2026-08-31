@@ -58,9 +58,7 @@ class Command(BaseCommand):
             preflight_operation(expected_release_sha)
             collection_id = require_uuid(options.get("collection_id"))
             decision_id = require_uuid(options.get("decision_id"))
-            reconciliation_hash = require_sha256(
-                options.get("reconciliation_report_sha256")
-            )
+            reconciliation_hash = require_sha256(options.get("reconciliation_report_sha256"))
             acceptance_hash = require_sha256(options.get("acceptance_evidence_sha256"))
             supersedes_id = _optional_uuid(options.get("supersedes_decision"))
             decision, created, actor_id = self._approve(

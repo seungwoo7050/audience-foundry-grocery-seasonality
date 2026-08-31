@@ -85,67 +85,189 @@ DROP FUNCTION IF EXISTS grocery_guard_historical_activation();
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('grocery', '0017_historical_publication_revision'),
+        ("grocery", "0017_historical_publication_revision"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='HistoricalRetailPublicationChannel',
+            name="HistoricalRetailPublicationChannel",
             fields=[
-                ('channel', models.CharField(default='HISTORICAL_RETAIL', editable=False, max_length=32, primary_key=True, serialize=False)),
-                ('version', models.PositiveBigIntegerField(default=0)),
-                ('updated_at', models.DateTimeField(default=django.utils.timezone.now)),
-                ('current_revision', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='current_for_channels', to='grocery.historicalretailpublicationrevision')),
+                (
+                    "channel",
+                    models.CharField(
+                        default="HISTORICAL_RETAIL",
+                        editable=False,
+                        max_length=32,
+                        primary_key=True,
+                        serialize=False,
+                    ),
+                ),
+                ("version", models.PositiveBigIntegerField(default=0)),
+                ("updated_at", models.DateTimeField(default=django.utils.timezone.now)),
+                (
+                    "current_revision",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="current_for_channels",
+                        to="grocery.historicalretailpublicationrevision",
+                    ),
+                ),
             ],
             options={
-                'permissions': [('publish_historical_publication', 'Can publish historical retail revisions')],
+                "permissions": [
+                    ("publish_historical_publication", "Can publish historical retail revisions")
+                ],
             },
         ),
         migrations.CreateModel(
-            name='HistoricalRetailPublicationActivation',
+            name="HistoricalRetailPublicationActivation",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('operation', models.CharField(choices=[('ACTIVATE', 'Activate'), ('ROLLBACK', 'Rollback'), ('WITHDRAW', 'Withdraw')], max_length=16)),
-                ('sequence', models.PositiveBigIntegerField()),
-                ('reason_code', models.CharField(max_length=64, validators=[django.core.validators.RegexValidator('^[A-Z][A-Z0-9_]*$')])),
-                ('acceptance_evidence_sha256', models.CharField(max_length=64, validators=[django.core.validators.RegexValidator(message='Enter a lowercase 64-character SHA-256 digest.', regex='^[0-9a-f]{64}$')])),
-                ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('previous_revision', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='historical_transition_sources', to='grocery.historicalretailpublicationrevision')),
-                ('publisher', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='grocery_historical_publication_activations', to=settings.AUTH_USER_MODEL)),
-                ('target_revision', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='historical_transition_targets', to='grocery.historicalretailpublicationrevision')),
-                ('channel', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='activations', to='grocery.historicalretailpublicationchannel')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                (
+                    "operation",
+                    models.CharField(
+                        choices=[
+                            ("ACTIVATE", "Activate"),
+                            ("ROLLBACK", "Rollback"),
+                            ("WITHDRAW", "Withdraw"),
+                        ],
+                        max_length=16,
+                    ),
+                ),
+                ("sequence", models.PositiveBigIntegerField()),
+                (
+                    "reason_code",
+                    models.CharField(
+                        max_length=64,
+                        validators=[django.core.validators.RegexValidator("^[A-Z][A-Z0-9_]*$")],
+                    ),
+                ),
+                (
+                    "acceptance_evidence_sha256",
+                    models.CharField(
+                        max_length=64,
+                        validators=[
+                            django.core.validators.RegexValidator(
+                                message="Enter a lowercase 64-character SHA-256 digest.",
+                                regex="^[0-9a-f]{64}$",
+                            )
+                        ],
+                    ),
+                ),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                (
+                    "previous_revision",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="historical_transition_sources",
+                        to="grocery.historicalretailpublicationrevision",
+                    ),
+                ),
+                (
+                    "publisher",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="grocery_historical_publication_activations",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "target_revision",
+                    models.ForeignKey(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="historical_transition_targets",
+                        to="grocery.historicalretailpublicationrevision",
+                    ),
+                ),
+                (
+                    "channel",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="activations",
+                        to="grocery.historicalretailpublicationchannel",
+                    ),
+                ),
             ],
         ),
         migrations.AddConstraint(
-            model_name='historicalretailpublicationchannel',
-            constraint=models.CheckConstraint(condition=models.Q(('channel', 'HISTORICAL_RETAIL')), name='grocery_history_channel_fixed'),
+            model_name="historicalretailpublicationchannel",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("channel", "HISTORICAL_RETAIL")),
+                name="grocery_history_channel_fixed",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='historicalretailpublicationchannel',
-            constraint=models.CheckConstraint(condition=models.Q(models.Q(('current_revision__isnull', True), ('version', 0)), ('version__gt', 0), _connector='OR'), name='grocery_history_channel_initial_valid'),
+            model_name="historicalretailpublicationchannel",
+            constraint=models.CheckConstraint(
+                condition=models.Q(
+                    models.Q(("current_revision__isnull", True), ("version", 0)),
+                    ("version__gt", 0),
+                    _connector="OR",
+                ),
+                name="grocery_history_channel_initial_valid",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='historicalretailpublicationactivation',
-            constraint=models.UniqueConstraint(fields=('channel', 'sequence'), name='grocery_history_activation_sequence_uniq'),
+            model_name="historicalretailpublicationactivation",
+            constraint=models.UniqueConstraint(
+                fields=("channel", "sequence"), name="grocery_history_activation_sequence_uniq"
+            ),
         ),
         migrations.AddConstraint(
-            model_name='historicalretailpublicationactivation',
-            constraint=models.CheckConstraint(condition=models.Q(('sequence__gt', 0)), name='grocery_history_activation_sequence_positive'),
+            model_name="historicalretailpublicationactivation",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("sequence__gt", 0)),
+                name="grocery_history_activation_sequence_positive",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='historicalretailpublicationactivation',
-            constraint=models.CheckConstraint(condition=models.Q(('operation__in', ('ACTIVATE', 'ROLLBACK', 'WITHDRAW'))), name='grocery_history_activation_operation_valid'),
+            model_name="historicalretailpublicationactivation",
+            constraint=models.CheckConstraint(
+                condition=models.Q(("operation__in", ("ACTIVATE", "ROLLBACK", "WITHDRAW"))),
+                name="grocery_history_activation_operation_valid",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='historicalretailpublicationactivation',
-            constraint=models.CheckConstraint(condition=models.Q(('reason_code__regex', '^[A-Z][A-Z0-9_]*$'), ('acceptance_evidence_sha256__regex', '^[0-9a-f]{64}$')), name='grocery_history_activation_evidence_valid'),
+            model_name="historicalretailpublicationactivation",
+            constraint=models.CheckConstraint(
+                condition=models.Q(
+                    ("reason_code__regex", "^[A-Z][A-Z0-9_]*$"),
+                    ("acceptance_evidence_sha256__regex", "^[0-9a-f]{64}$"),
+                ),
+                name="grocery_history_activation_evidence_valid",
+            ),
         ),
         migrations.AddConstraint(
-            model_name='historicalretailpublicationactivation',
-            constraint=models.CheckConstraint(condition=models.Q(models.Q(('operation', 'WITHDRAW'), ('target_revision__isnull', True), ('previous_revision__isnull', False)), models.Q(('operation__in', ('ACTIVATE', 'ROLLBACK')), ('target_revision__isnull', False), models.Q(('previous_revision', models.F('target_revision')), _negated=True)), _connector='OR'), name='grocery_history_activation_shape_valid'),
+            model_name="historicalretailpublicationactivation",
+            constraint=models.CheckConstraint(
+                condition=models.Q(
+                    models.Q(
+                        ("operation", "WITHDRAW"),
+                        ("target_revision__isnull", True),
+                        ("previous_revision__isnull", False),
+                    ),
+                    models.Q(
+                        ("operation__in", ("ACTIVATE", "ROLLBACK")),
+                        ("target_revision__isnull", False),
+                        models.Q(("previous_revision", models.F("target_revision")), _negated=True),
+                    ),
+                    _connector="OR",
+                ),
+                name="grocery_history_activation_shape_valid",
+            ),
         ),
         migrations.RunSQL(CREATE_GUARDS, DROP_GUARDS),
     ]

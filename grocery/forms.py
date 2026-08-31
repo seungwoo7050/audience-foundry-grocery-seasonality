@@ -242,7 +242,7 @@ def parse_selection_query(data: QueryDict | Mapping[str, object]) -> SelectionQu
     for raw_value in raw_values:
         try:
             value = uuid.UUID(raw_value)
-        except (AttributeError, ValueError):
+        except AttributeError, ValueError:
             raise ValidationError("선택한 품목을 확인하세요.", code="invalid_series") from None
         if str(value) != raw_value:
             raise ValidationError("선택한 품목을 확인하세요.", code="invalid_series")

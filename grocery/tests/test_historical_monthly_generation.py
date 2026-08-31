@@ -20,9 +20,7 @@ def test_monthly_parser_result_persists_candidate_without_publication(db: None) 
     recent = bundle.series.recent_series
     source, prepared, artifact = create_historical_artifact(
         HistoricalDataset.MONTHLY,
-        HistoricalPriceQuery(
-            start="202512", end="202512", category_code="200", item_code="212"
-        ),
+        HistoricalPriceQuery(start="202512", end="202512", category_code="200", item_code="212"),
         row_count=1,
     )
     row = ParsedMonthlyPriceRow(

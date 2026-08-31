@@ -46,8 +46,5 @@ class HistoricalPriceFact(models.Model):
         super().clean()
         if self.collection_part_id and self.collection_part.collection_id != self.collection_id:
             raise ValidationError("Historical fact collection and part do not match.")
-        if (
-            self.collection_id
-            and self.collection.state != HistoricalSourceCollection.State.STARTED
-        ):
+        if self.collection_id and self.collection.state != HistoricalSourceCollection.State.STARTED:
             raise ValidationError("Historical facts can only be attached to a started collection.")

@@ -36,9 +36,7 @@ class _SyntheticClient:
         ).hexdigest()
         return KamisFetchResult(
             rows=(self.row,),
-            page_receipts=(
-                PageReceipt(1, 1, 1, page_size, 1, 1, 200, "0", 10, body_hash),
-            ),
+            page_receipts=(PageReceipt(1, 1, 1, page_size, 1, 1, 200, "0", 10, body_hash),),
             ordered_manifest_sha256=manifest,
             call_count=1,
             request_scope_sha256=prepared.scope_sha256,
@@ -54,9 +52,7 @@ def test_workflow_uses_synthetic_transport_and_stops_before_review(db: None) -> 
     row = monthly_row()
     row.update(exmn_ym="202512", sgg_cd=bundle.region.region_code, sgg_nm=bundle.region.region_name)
     client = _SyntheticClient(row)
-    query = HistoricalPriceQuery(
-        start="202512", end="202512", category_code="200", item_code="212"
-    )
+    query = HistoricalPriceQuery(start="202512", end="202512", category_code="200", item_code="212")
     review_count = HistoricalCollectionReviewDecision.objects.count()
 
     outcome = ingest_historical_collection(

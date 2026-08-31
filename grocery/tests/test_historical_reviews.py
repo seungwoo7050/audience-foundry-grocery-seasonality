@@ -65,9 +65,7 @@ def test_authorized_review_uuid_replay_is_idempotent(db: None) -> None:
                     acceptance_evidence_sha256="e" * 64,
                     reason_code="FORGED",
                     approved_result_sha256=collection.result_sha256,
-                    approved_partition_manifest_sha256=(
-                        collection.partition_manifest_sha256
-                    ),
+                    approved_partition_manifest_sha256=(collection.partition_manifest_sha256),
                     supersedes=decision,
                 )
             ]

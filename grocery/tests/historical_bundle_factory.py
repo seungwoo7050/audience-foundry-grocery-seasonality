@@ -215,9 +215,7 @@ def create_reviewed_historical_bundle() -> ReviewedHistoricalBundle:
     for part, count in ((monthly_part, 36), (regional_part, 1), (market_part, 1)):
         _complete(part, count)
     reviewer = get_user_model().objects.create_user(username="bundle-reviewer")
-    reviewer.user_permissions.add(
-        Permission.objects.get(codename="review_historical_collection")
-    )
+    reviewer.user_permissions.add(Permission.objects.get(codename="review_historical_collection"))
     return ReviewedHistoricalBundle(
         monthly_review=_approve(monthly_part.collection, reviewer),
         regional_review=_approve(regional_part.collection, reviewer),

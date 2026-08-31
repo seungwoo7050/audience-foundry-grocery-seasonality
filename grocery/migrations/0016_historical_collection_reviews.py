@@ -10,31 +10,164 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('grocery', '0015_historical_daily_facts'),
+        ("grocery", "0015_historical_daily_facts"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
     operations = [
         migrations.CreateModel(
-            name='HistoricalCollectionReviewDecision',
+            name="HistoricalCollectionReviewDecision",
             fields=[
-                ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('decision', models.CharField(choices=[('APPROVE', 'Approve'), ('REJECT', 'Reject')], max_length=8)),
-                ('decided_at', models.DateTimeField(default=django.utils.timezone.now)),
-                ('reconciliation_report_sha256', models.CharField(max_length=64, validators=[django.core.validators.RegexValidator(message='Enter a lowercase 64-character SHA-256 digest.', regex='^[0-9a-f]{64}$')])),
-                ('acceptance_evidence_sha256', models.CharField(max_length=64, validators=[django.core.validators.RegexValidator(message='Enter a lowercase 64-character SHA-256 digest.', regex='^[0-9a-f]{64}$')])),
-                ('reason_code', models.CharField(max_length=64, validators=[django.core.validators.RegexValidator('^[A-Z][A-Z0-9_]*$')])),
-                ('approved_result_sha256', models.CharField(blank=True, default='', max_length=64, validators=[django.core.validators.RegexValidator(message='Enter a lowercase 64-character SHA-256 digest.', regex='^[0-9a-f]{64}$')])),
-                ('approved_partition_manifest_sha256', models.CharField(blank=True, default='', max_length=64, validators=[django.core.validators.RegexValidator(message='Enter a lowercase 64-character SHA-256 digest.', regex='^[0-9a-f]{64}$')])),
-                ('collection', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='review_decisions', to='grocery.historicalsourcecollection')),
-                ('reviewer', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='grocery_historical_review_decisions', to=settings.AUTH_USER_MODEL)),
-                ('supersedes', models.OneToOneField(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='superseding_decision', to='grocery.historicalcollectionreviewdecision')),
+                (
+                    "id",
+                    models.UUIDField(
+                        default=uuid.uuid4, editable=False, primary_key=True, serialize=False
+                    ),
+                ),
+                (
+                    "decision",
+                    models.CharField(
+                        choices=[("APPROVE", "Approve"), ("REJECT", "Reject")], max_length=8
+                    ),
+                ),
+                ("decided_at", models.DateTimeField(default=django.utils.timezone.now)),
+                (
+                    "reconciliation_report_sha256",
+                    models.CharField(
+                        max_length=64,
+                        validators=[
+                            django.core.validators.RegexValidator(
+                                message="Enter a lowercase 64-character SHA-256 digest.",
+                                regex="^[0-9a-f]{64}$",
+                            )
+                        ],
+                    ),
+                ),
+                (
+                    "acceptance_evidence_sha256",
+                    models.CharField(
+                        max_length=64,
+                        validators=[
+                            django.core.validators.RegexValidator(
+                                message="Enter a lowercase 64-character SHA-256 digest.",
+                                regex="^[0-9a-f]{64}$",
+                            )
+                        ],
+                    ),
+                ),
+                (
+                    "reason_code",
+                    models.CharField(
+                        max_length=64,
+                        validators=[django.core.validators.RegexValidator("^[A-Z][A-Z0-9_]*$")],
+                    ),
+                ),
+                (
+                    "approved_result_sha256",
+                    models.CharField(
+                        blank=True,
+                        default="",
+                        max_length=64,
+                        validators=[
+                            django.core.validators.RegexValidator(
+                                message="Enter a lowercase 64-character SHA-256 digest.",
+                                regex="^[0-9a-f]{64}$",
+                            )
+                        ],
+                    ),
+                ),
+                (
+                    "approved_partition_manifest_sha256",
+                    models.CharField(
+                        blank=True,
+                        default="",
+                        max_length=64,
+                        validators=[
+                            django.core.validators.RegexValidator(
+                                message="Enter a lowercase 64-character SHA-256 digest.",
+                                regex="^[0-9a-f]{64}$",
+                            )
+                        ],
+                    ),
+                ),
+                (
+                    "collection",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="review_decisions",
+                        to="grocery.historicalsourcecollection",
+                    ),
+                ),
+                (
+                    "reviewer",
+                    models.ForeignKey(
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="grocery_historical_review_decisions",
+                        to=settings.AUTH_USER_MODEL,
+                    ),
+                ),
+                (
+                    "supersedes",
+                    models.OneToOneField(
+                        blank=True,
+                        null=True,
+                        on_delete=django.db.models.deletion.PROTECT,
+                        related_name="superseding_decision",
+                        to="grocery.historicalcollectionreviewdecision",
+                    ),
+                ),
             ],
             options={
-                'permissions': [('review_historical_collection', 'Can review historical collections')],
-                'constraints': [models.CheckConstraint(condition=models.Q(('decision__in', ('APPROVE', 'REJECT'))), name='grocery_history_review_decision_valid'), models.CheckConstraint(condition=models.Q(('reconciliation_report_sha256__regex', '^[0-9a-f]{64}$'), ('acceptance_evidence_sha256__regex', '^[0-9a-f]{64}$')), name='grocery_history_review_evidence_valid'), models.CheckConstraint(condition=models.Q(('reason_code__regex', '^[A-Z][A-Z0-9_]*$')), name='grocery_history_review_reason_valid'), models.CheckConstraint(condition=models.Q(models.Q(('approved_partition_manifest_sha256__regex', '^[0-9a-f]{64}$'), ('approved_result_sha256__regex', '^[0-9a-f]{64}$'), ('decision', 'APPROVE')), models.Q(('approved_partition_manifest_sha256', ''), ('approved_result_sha256', ''), ('decision', 'REJECT')), _connector='OR'), name='grocery_history_review_approval_valid'), models.CheckConstraint(condition=models.Q(('supersedes__isnull', True), models.Q(('id', models.F('supersedes_id')), _negated=True), _connector='OR'), name='grocery_history_review_not_self'), models.UniqueConstraint(condition=models.Q(('supersedes__isnull', True)), fields=('collection',), name='grocery_history_review_root_uniq')],
+                "permissions": [
+                    ("review_historical_collection", "Can review historical collections")
+                ],
+                "constraints": [
+                    models.CheckConstraint(
+                        condition=models.Q(("decision__in", ("APPROVE", "REJECT"))),
+                        name="grocery_history_review_decision_valid",
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(
+                            ("reconciliation_report_sha256__regex", "^[0-9a-f]{64}$"),
+                            ("acceptance_evidence_sha256__regex", "^[0-9a-f]{64}$"),
+                        ),
+                        name="grocery_history_review_evidence_valid",
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(("reason_code__regex", "^[A-Z][A-Z0-9_]*$")),
+                        name="grocery_history_review_reason_valid",
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(
+                            models.Q(
+                                ("approved_partition_manifest_sha256__regex", "^[0-9a-f]{64}$"),
+                                ("approved_result_sha256__regex", "^[0-9a-f]{64}$"),
+                                ("decision", "APPROVE"),
+                            ),
+                            models.Q(
+                                ("approved_partition_manifest_sha256", ""),
+                                ("approved_result_sha256", ""),
+                                ("decision", "REJECT"),
+                            ),
+                            _connector="OR",
+                        ),
+                        name="grocery_history_review_approval_valid",
+                    ),
+                    models.CheckConstraint(
+                        condition=models.Q(
+                            ("supersedes__isnull", True),
+                            models.Q(("id", models.F("supersedes_id")), _negated=True),
+                            _connector="OR",
+                        ),
+                        name="grocery_history_review_not_self",
+                    ),
+                    models.UniqueConstraint(
+                        condition=models.Q(("supersedes__isnull", True)),
+                        fields=("collection",),
+                        name="grocery_history_review_root_uniq",
+                    ),
+                ],
             },
         ),
     ]

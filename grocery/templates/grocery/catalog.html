@@ -177,27 +177,11 @@
                       <dl class="ledger-fact ledger-fact--comparison">
                         <dt>{{ selected_period_heading|default:"1주 비교" }}</dt>
                         <dd>
-                          {% with comparison=item.comparison|default:item.week_comparison %}
-                            {% if comparison.available %}
-                              <span class="direction direction--{{ comparison.direction_code|lower }}">
-                                <span class="direction__symbol" aria-hidden="true">
-                                  {% if comparison.direction_code == "LOWER" %}↓{% elif comparison.direction_code == "HIGHER" %}↑{% else %}＝{% endif %}
-                                </span>
-                                <span>
-                                  {% if comparison.direction_code == "EQUAL" %}
-                                    {{ comparison.period_label }}과 같음 ({{ comparison.percentage_display }})
-                                  {% else %}
-                                    {{ comparison.period_label }}보다 {{ comparison.difference_display }}
-                                    {{ comparison.direction_label }} ({{ comparison.percentage_display }})
-                                  {% endif %}
-                                </span>
-                              </span>
-                            {% else %}
-                              <span class="status-text status-text--unavailable">
-                                <span aria-hidden="true">○</span> {{ selected_period_missing_label|default:"1주 전 비교값 없음" }}
-                              </span>
-                            {% endif %}
-                          {% endwith %}
+                          {% if item.comparison %}
+                            {% include "grocery/_comparison_summary.html" with comparison=item.comparison missing_label=selected_period_missing_label %}
+                          {% else %}
+                            {% include "grocery/_comparison_summary.html" with comparison=item.week_comparison missing_label="1주 전 비교값 없음" %}
+                          {% endif %}
                         </dd>
                       </dl>
 

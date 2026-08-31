@@ -1,0 +1,19 @@
+{% if comparison.available %}
+  <span class="direction direction--{{ comparison.direction_code|lower }}">
+    <span class="direction__symbol" aria-hidden="true">
+      {% if comparison.direction_code == "LOWER" %}↓{% elif comparison.direction_code == "HIGHER" %}↑{% else %}＝{% endif %}
+    </span>
+    <span>
+      {% if comparison.direction_code == "EQUAL" %}
+        {{ comparison.period_label }}과 같음 ({{ comparison.percentage_display }})
+      {% else %}
+        {{ comparison.period_label }}보다 {{ comparison.difference_display }}
+        {{ comparison.direction_label }} ({{ comparison.percentage_display }})
+      {% endif %}
+    </span>
+  </span>
+{% else %}
+  <span class="status-text status-text--unavailable">
+    <span aria-hidden="true">○</span> {{ missing_label|default:"1주 전 비교값 없음" }}
+  </span>
+{% endif %}

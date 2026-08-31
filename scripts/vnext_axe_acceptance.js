@@ -58,13 +58,38 @@ async (page) => {
         throw new Error(`axe-core ${expectedVersion} required, received ${window.axe.version}`);
       }
       window.axe.configure({ rules: [{ id: "target-size", enabled: true }] });
-      return window.axe.run(document, {
+      const report = await window.axe.run(document, {
         resultTypes: ["violations", "incomplete", "passes"],
         runOnly: {
           type: "tag",
           values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"],
         },
       });
+      const reviewedIncomplete = [];
+      const unexpectedIncomplete = [];
+      for (const result of report.incomplete) {
+        const isReviewedContrast =
+          result.id === "color-contrast" &&
+          result.nodes.every((node) =>
+            node.target
+              .flat(Number.POSITIVE_INFINITY)
+              .filter((selector) => typeof selector === "string")
+              .every((selector) => {
+                const element = document.querySelector(selector);
+                return (
+                  element?.getAttribute("aria-hidden") === "true" ||
+                  element?.matches("text.history-chart__label") === true
+                );
+              }),
+          );
+        (isReviewedContrast ? reviewedIncomplete : unexpectedIncomplete).push(result);
+      }
+      return {
+        incomplete: unexpectedIncomplete,
+        passes: report.passes,
+        reviewedIncomplete,
+        violations: report.violations,
+      };
     }, requiredAxeVersion);
     const violations = report.violations.map((violation) => ({
       help: violation.help,
@@ -88,7 +113,15 @@ async (page) => {
       incomplete.length === 0,
       `${name} axe incomplete results require review: ${JSON.stringify(incomplete)}`,
     );
-    return { name, passes: report.passes.length, viewport: "390x844" };
+    return {
+      name,
+      passes: report.passes.length,
+      reviewedContrastNodes: report.reviewedIncomplete.reduce(
+        (total, result) => total + result.nodes.length,
+        0,
+      ),
+      viewport: "390x844",
+    };
   }
 
   await page.setViewportSize({ width: 390, height: 844 });

@@ -148,6 +148,7 @@ def test_catalog_validation_reveals_and_associates_advanced_controls() -> None:
     context = catalog_context(
         catalog_state="validation",
         validation_errors=[
+            {"message": "품목명은 한 줄로 입력하세요.", "target": "catalog-query"},
             {"message": "비교 기간을 확인하세요.", "target": "catalog-period"},
             {"message": "변화 방향을 확인하세요.", "target": "catalog-direction"},
             {"message": "표시 순서를 확인하세요.", "target": "catalog-sort"},
@@ -155,6 +156,7 @@ def test_catalog_validation_reveals_and_associates_advanced_controls() -> None:
         period_options=[{"value": "week", "label": "1주 비교", "selected": True}],
         direction_options=[{"value": "all", "label": "전체", "selected": True}],
         sort_options=[{"value": "name", "label": "품목명 순", "selected": True}],
+        query_error="품목명은 한 줄로 입력하세요.",
         period_error=True,
         direction_error=True,
         sort_error=True,
@@ -164,6 +166,11 @@ def test_catalog_validation_reveals_and_associates_advanced_controls() -> None:
 
     assert '<div class="form-error" role="alert" aria-labelledby="validation-title">' in html
     assert '<details class="catalog-options" open>' in html
+    query_control = html[html.index('id="catalog-query"') :]
+    assert (
+        'aria-describedby="catalog-query-hint validation-title"'
+        in query_control.split(">", 1)[0]
+    )
     for target in ("catalog-period", "catalog-direction", "catalog-sort"):
         assert f'href="#{target}"' in html
         control = html[html.index(f'id="{target}"') :]

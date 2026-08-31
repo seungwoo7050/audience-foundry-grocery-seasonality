@@ -67,7 +67,7 @@
           maxlength="80"
           autocomplete="off"
           enterkeyhint="search"
-          aria-describedby="catalog-query-hint{% if query_error %} search-error{% endif %}"
+          aria-describedby="catalog-query-hint{% if query_error and validation_errors %} validation-title{% elif query_error %} search-error{% endif %}"
           {% if query_error %}aria-invalid="true"{% endif %}
         >
       </div>

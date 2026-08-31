@@ -1,0 +1,91 @@
+from decimal import Decimal
+
+import pytest
+from django.core.exceptions import ValidationError
+from django.http import QueryDict
+
+from grocery.forms import CatalogForm, HistoryForm, MarketsForm, RegionsForm, parse_selection_query
+from grocery.security import SECURITY_HEADERS
+from grocery.vnext_presentation import MonthlyChartDatum, build_history_chart, range_meter
+
+
+@pytest.mark.parametrize(
+    "query_string",
+    [
+        "unknown=private-marker",
+        "period=week&period=month",
+        "q=private-marker&page=2",
+        "page=01",
+    ],
+)
+def test_catalog_query_rejects_noncanonical_state_without_reflecting_values(
+    query_string: str,
+) -> None:
+    marker = "private-marker"
+    form = CatalogForm(QueryDict(query_string))
+
+    assert not form.is_valid()
+    assert marker not in str(form.errors)
+
+
+@pytest.mark.parametrize(
+    ("form_type", "query_string"),
+    [
+        (HistoryForm, "region=AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"),
+        (HistoryForm, "region=aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"),
+        (RegionsForm, "date=2026-8-01"),
+        (RegionsForm, "date=2026-02-30"),
+        (MarketsForm, "date=2026-08-01&page=001"),
+    ],
+)
+def test_historical_forms_require_canonical_uuid_date_and_page(
+    form_type: type, query_string: str
+) -> None:
+    assert not form_type(QueryDict(query_string)).is_valid()
+
+
+def test_selection_preserves_first_seen_order_and_rejects_pre_deduplication_overflow() -> None:
+    first = "11111111-1111-4111-8111-111111111111"
+    second = "22222222-2222-4222-8222-222222222222"
+    parsed = parse_selection_query(QueryDict(f"series={first}&series={second}&series={first}"))
+
+    assert tuple(map(str, parsed.series_ids)) == (first, second)
+    with pytest.raises(ValidationError):
+        parse_selection_query(QueryDict("&".join(f"series={first}" for _ in range(6))))
+
+
+def test_monthly_chart_never_connects_across_a_missing_month() -> None:
+    data = [
+        MonthlyChartDatum("202601", Decimal("100"), Decimal("90"), Decimal("110")),
+        MonthlyChartDatum("202602", Decimal("110"), Decimal("100"), Decimal("120")),
+        MonthlyChartDatum("202604", Decimal("130"), Decimal("120"), Decimal("140")),
+    ]
+
+    chart = build_history_chart(data)
+
+    assert len(chart["mean_segments"]) == 1
+    assert len(chart["range_segments"]) == 1
+    assert len(chart["points"]) == 3
+    isolated_x = chart["points"][2]["x"]
+    assert isolated_x not in chart["mean_segments"][0]["points"]
+    assert isolated_x not in chart["range_segments"][0]["points"]
+    assert chart["gap_markers"] == [{"x": "490.67", "label": "2026.03"}]
+    assert chart["points"] == [
+        {"x": "64", "y": "195.2"},
+        {"x": "277.33", "y": "150.4"},
+        {"x": "704", "y": "60.8"},
+    ]
+
+
+def test_regional_meter_uses_one_server_side_decimal_scale() -> None:
+    assert range_meter(
+        minimum=Decimal("900"),
+        mean=Decimal("1000"),
+        maximum=Decimal("1100"),
+        scale_minimum=Decimal("800"),
+        scale_maximum=Decimal("1200"),
+    ) == {"minimum_x": "25", "mean_x": "50", "maximum_x": "75"}
+
+
+def test_public_referrer_policy_sends_no_query_state() -> None:
+    assert SECURITY_HEADERS["Referrer-Policy"] == "no-referrer"

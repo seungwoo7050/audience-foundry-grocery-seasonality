@@ -139,6 +139,7 @@ evidence로 취급합니다. 세부 안전 경계는 [운영 런북](docs/OPERAT
 - [vNext source gate](docs/VNEXT-SOURCE-GATE.md)
 - [vNext public-read 계약](docs/VNEXT-PUBLIC-READ-CONTRACT.md)
 - [Phase 0 역사적 기준을 포함한 현재 운영 런북](docs/OPERATIONS-RUNBOOK.md)
+- [Production 배포 체크리스트](docs/PRODUCTION-DEPLOYMENT-CHECKLIST.md)
 - [Phase 0 배포 직전 완료 보고서](docs/COMPLETION-REPORT.md) — local gate 결과와 production
   사람 checkpoint를 보존하며 vNext 결과는 별도 부록으로 기록
 

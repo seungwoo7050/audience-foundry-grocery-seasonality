@@ -11,7 +11,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
-from django.db import connection, transaction
+from django.db import transaction
 
 from grocery.historical_activation_models import (
     HistoricalRetailPublicationActivation,
@@ -58,6 +58,10 @@ class VnextBrowserFixture:
     monthly_fact_count: int
 
 
+def _database_configuration() -> dict[str, object]:
+    return dict(settings.DATABASES["default"])
+
+
 def _require_disposable_qa() -> None:
     if (
         settings.DEBUG is not True
@@ -65,7 +69,7 @@ def _require_disposable_qa() -> None:
         or getattr(settings, "QA_STATE_PREVIEWS_ENABLED", None) is not True
     ):
         raise RuntimeError("qa_fixture_environment_denied")
-    database = connection.settings_dict
+    database = _database_configuration()
     name = database.get("NAME")
     host = database.get("HOST")
     if (

@@ -1,7 +1,6 @@
 from unittest.mock import patch
 
 import pytest
-from django.db import connection
 from django.test import override_settings
 
 from grocery.historical_activation_models import HistoricalRetailPublicationChannel
@@ -17,9 +16,13 @@ def test_vnext_browser_fixture_uses_real_sealed_activation_without_source_calls(
     transactional_db: None,
 ) -> None:
     with (
-        patch.dict(
-            connection.settings_dict,
-            {"HOST": "127.0.0.1", "NAME": "grocery_vnext_browser_test"},
+        patch(
+            "grocery.tests.vnext_browser_fixture._database_configuration",
+            return_value={
+                "ENGINE": "django.db.backends.postgresql",
+                "HOST": "127.0.0.1",
+                "NAME": "grocery_vnext_browser_test",
+            },
         ),
         patch(
             "grocery.source.client.KamisHttpClient.fetch_recent_prices",
@@ -54,7 +57,14 @@ def test_vnext_browser_fixture_is_denied_outside_disposable_qa() -> None:
 @override_settings(DEBUG=True, ADMIN_ENABLED=False, QA_STATE_PREVIEWS_ENABLED=True)
 def test_vnext_browser_fixture_rejects_non_disposable_database_identity() -> None:
     with (
-        patch.dict(connection.settings_dict, {"HOST": "127.0.0.1", "NAME": "grocery"}),
+        patch(
+            "grocery.tests.vnext_browser_fixture._database_configuration",
+            return_value={
+                "ENGINE": "django.db.backends.postgresql",
+                "HOST": "127.0.0.1",
+                "NAME": "grocery",
+            },
+        ),
         pytest.raises(RuntimeError, match="database_denied"),
     ):
         build_vnext_browser_fixture()
@@ -65,9 +75,13 @@ def test_vnext_browser_fixture_rejects_non_disposable_database_identity() -> Non
 def test_vnext_browser_fixture_rejects_existing_source_or_domain_rows() -> None:
     create_source_configuration()
     with (
-        patch.dict(
-            connection.settings_dict,
-            {"HOST": "127.0.0.1", "NAME": "grocery_vnext_browser_test"},
+        patch(
+            "grocery.tests.vnext_browser_fixture._database_configuration",
+            return_value={
+                "ENGINE": "django.db.backends.postgresql",
+                "HOST": "127.0.0.1",
+                "NAME": "grocery_vnext_browser_test",
+            },
         ),
         pytest.raises(RuntimeError, match="database_not_empty"),
     ):

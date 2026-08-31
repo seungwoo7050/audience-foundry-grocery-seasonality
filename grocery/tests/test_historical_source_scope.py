@@ -46,6 +46,15 @@ def test_historical_dataset_and_mode_are_an_exact_pair(db: None) -> None:
         )
 
 
+def test_historical_dataset_is_bound_to_approved_endpoint_and_auth(db: None) -> None:
+    with pytest.raises(ValidationError):
+        create_source_configuration(
+            dataset_id="15156060",
+            publication_mode=SourceConfiguration.PublicationMode.HISTORICAL_MONTHLY,
+            endpoint_path="/B552845/recent/price",
+        )
+
+
 def test_partition_scope_separates_identical_page_manifests(db: None) -> None:
     source = create_source_configuration()
     first, first_created = build_source_artifact(_completed_attempt(source, "a" * 64).id)

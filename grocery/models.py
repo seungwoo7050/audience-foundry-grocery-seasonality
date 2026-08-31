@@ -205,6 +205,42 @@ class SourceConfiguration(models.Model):
                 name="grocery_source_historical_dataset_mode",
             ),
             models.CheckConstraint(
+                condition=(
+                    Q(
+                        dataset_id="15156060",
+                        publication_mode="HISTORICAL_MONTHLY",
+                        endpoint_host="apis.data.go.kr",
+                        endpoint_path="/B552845/perYearMonth/price",
+                        authentication_mode="DATA_GO_KR_SERVICE_KEY",
+                        logical_secret_name="KAMIS_API_KEY",  # noqa: S106 - logical name only.
+                    )
+                    | Q(
+                        dataset_id="15156062",
+                        publication_mode="HISTORICAL_REGIONAL",
+                        endpoint_host="apis.data.go.kr",
+                        endpoint_path="/B552845/perRegion/price",
+                        authentication_mode="DATA_GO_KR_SERVICE_KEY",
+                        logical_secret_name="KAMIS_API_KEY",  # noqa: S106 - logical name only.
+                    )
+                    | Q(
+                        dataset_id="15156065",
+                        publication_mode="HISTORICAL_MARKET",
+                        endpoint_host="apis.data.go.kr",
+                        endpoint_path="/B552845/periodRetail/price",
+                        authentication_mode="DATA_GO_KR_SERVICE_KEY",
+                        logical_secret_name="KAMIS_API_KEY",  # noqa: S106 - logical name only.
+                    )
+                    | ~Q(
+                        publication_mode__in=(
+                            "HISTORICAL_MONTHLY",
+                            "HISTORICAL_REGIONAL",
+                            "HISTORICAL_MARKET",
+                        )
+                    )
+                ),
+                name="grocery_source_historical_endpoint",
+            ),
+            models.CheckConstraint(
                 condition=Q(endpoint_scheme="https"),
                 name="grocery_source_endpoint_scheme_valid",
             ),

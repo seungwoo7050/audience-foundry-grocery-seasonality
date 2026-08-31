@@ -40,6 +40,12 @@ def create_source_configuration(**overrides: Any) -> SourceConfiguration:
         "rights_confirmed_at": timezone.now(),
     }
     values.update(overrides)
+    if "endpoint_path" not in overrides:
+        values["endpoint_path"] = {
+            "15156060": "/B552845/perYearMonth/price",
+            "15156062": "/B552845/perRegion/price",
+            "15156065": "/B552845/periodRetail/price",
+        }.get(values["dataset_id"], values["endpoint_path"])
     return SourceConfiguration.objects.create(**values)
 
 

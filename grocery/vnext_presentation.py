@@ -50,6 +50,87 @@ def format_year_month(value: str) -> tuple[str, str]:
     return f"{year:04d}-{month:02d}", f"{year}년 {month}월"
 
 
+def monthly_display_point(datum: MonthlyChartDatum) -> dict[str, object]:
+    """Format one validated monthly provider fact for an SSR ledger."""
+
+    _validate_monthly_data((datum,))
+    period_iso, period_label = format_year_month(datum.year_month)
+    return {
+        "available": True,
+        "period_iso": period_iso,
+        "period_label": period_label,
+        "mean_machine": decimal_machine(datum.provider_mean),
+        "mean_label": format_provider_krw(datum.provider_mean),
+        "minimum_machine": decimal_machine(datum.provider_low),
+        "minimum_label": format_provider_krw(datum.provider_low),
+        "maximum_machine": decimal_machine(datum.provider_high),
+        "maximum_label": format_provider_krw(datum.provider_high),
+        "gap_after": False,
+    }
+
+
+def build_history_summary(data: Sequence[MonthlyChartDatum]) -> dict[str, object]:
+    """Prepare latest and extrema-of-mean facts without template arithmetic.
+
+    Input must be unique and chronological. Stable ``min``/``max`` selection means
+    that the earliest month represents an exact tie.
+    """
+
+    _validate_monthly_data(data, require_chronological=True)
+    if not data:
+        raise ValueError("A monthly summary requires at least one point")
+    latest = data[-1]
+    lowest = min(data, key=lambda datum: datum.provider_mean)
+    highest = max(data, key=lambda datum: datum.provider_mean)
+    return {
+        "latest": _mean_summary_item(latest),
+        "lowest": _mean_summary_item(lowest),
+        "highest": _mean_summary_item(highest),
+    }
+
+
+def build_history_year_groups(data: Sequence[MonthlyChartDatum]) -> list[dict[str, object]]:
+    """Group chronological monthly facts by year, newest year first."""
+
+    _validate_monthly_data(data, require_chronological=True)
+    if not data:
+        raise ValueError("History year groups require at least one point")
+    points_by_year: dict[str, list[dict[str, object]]] = {}
+    for datum in data:
+        year = datum.year_month[:4]
+        points_by_year.setdefault(year, []).append(monthly_display_point(datum))
+    latest_year = data[-1].year_month[:4]
+    return [
+        {
+            "year": year,
+            "label": f"{year}년",
+            "is_latest": year == latest_year,
+            "open": year == latest_year,
+            "points": points_by_year[year],
+        }
+        for year in reversed(points_by_year)
+    ]
+
+
+def build_market_summary(values: Sequence[Decimal]) -> dict[str, object]:
+    """Summarize the full validated market result set before pagination."""
+
+    if not values:
+        raise ValueError("A market summary requires at least one observation")
+    if any(not value.is_finite() or value <= 0 for value in values):
+        raise ValueError("Market observations must be finite and positive")
+    minimum = min(values)
+    maximum = max(values)
+    return {
+        "total_count": len(values),
+        "total_count_label": f"{len(values)}곳",
+        "minimum_machine": decimal_machine(minimum),
+        "minimum_label": format_provider_krw(minimum),
+        "maximum_machine": decimal_machine(maximum),
+        "maximum_label": format_provider_krw(maximum),
+    }
+
+
 def range_meter(
     *,
     minimum: Decimal,
@@ -196,6 +277,34 @@ def build_history_chart(data: Sequence[MonthlyChartDatum]) -> dict[str, object]:
         "mean_segments": mean_segments,
         "points": point_context,
         "gap_markers": gap_markers,
+    }
+
+
+def _validate_monthly_data(
+    data: Sequence[MonthlyChartDatum], *, require_chronological: bool = False
+) -> None:
+    month_numbers: list[int] = []
+    for datum in data:
+        values = (datum.provider_low, datum.provider_mean, datum.provider_high)
+        if any(not value.is_finite() or value <= 0 for value in values):
+            raise ValueError("Monthly provider values must be finite and positive")
+        if not datum.provider_low <= datum.provider_mean <= datum.provider_high:
+            raise ValueError("Monthly provider ranges are not ordered")
+        month_numbers.append(_month_number(datum.year_month))
+    if require_chronological and any(
+        current <= previous
+        for previous, current in zip(month_numbers, month_numbers[1:], strict=False)
+    ):
+        raise ValueError("Monthly points must be unique and chronological")
+
+
+def _mean_summary_item(datum: MonthlyChartDatum) -> dict[str, str]:
+    period_iso, period_label = format_year_month(datum.year_month)
+    return {
+        "period_iso": period_iso,
+        "period_label": period_label,
+        "mean_machine": decimal_machine(datum.provider_mean),
+        "mean_label": format_provider_krw(datum.provider_mean),
     }
 
 

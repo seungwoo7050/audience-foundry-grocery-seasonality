@@ -7,7 +7,14 @@ from django.http import QueryDict
 
 from grocery.forms import CatalogForm, HistoryForm, MarketsForm, RegionsForm, parse_selection_query
 from grocery.security import SECURITY_HEADERS
-from grocery.vnext_presentation import MonthlyChartDatum, build_history_chart, range_meter
+from grocery.vnext_presentation import (
+    MonthlyChartDatum,
+    build_history_chart,
+    build_history_summary,
+    build_history_year_groups,
+    build_market_summary,
+    range_meter,
+)
 
 
 @pytest.mark.parametrize(
@@ -89,6 +96,72 @@ def test_regional_meter_uses_one_server_side_decimal_scale() -> None:
         scale_minimum=Decimal("800"),
         scale_maximum=Decimal("1200"),
     ) == {"minimum_x": "25", "mean_x": "50", "maximum_x": "75"}
+
+
+def test_monthly_summaries_and_year_groups_are_server_prepared_and_deterministic() -> None:
+    data = [
+        MonthlyChartDatum("202412", Decimal("100"), Decimal("90"), Decimal("110")),
+        MonthlyChartDatum("202501", Decimal("100"), Decimal("80"), Decimal("120")),
+        MonthlyChartDatum("202502", Decimal("130"), Decimal("120"), Decimal("140")),
+    ]
+
+    assert build_history_summary(data) == {
+        "latest": {
+            "period_iso": "2025-02",
+            "period_label": "2025년 2월",
+            "mean_machine": "130",
+            "mean_label": "130원",
+        },
+        "lowest": {
+            "period_iso": "2024-12",
+            "period_label": "2024년 12월",
+            "mean_machine": "100",
+            "mean_label": "100원",
+        },
+        "highest": {
+            "period_iso": "2025-02",
+            "period_label": "2025년 2월",
+            "mean_machine": "130",
+            "mean_label": "130원",
+        },
+    }
+    groups = build_history_year_groups(data)
+    assert [(group["year"], group["is_latest"], group["open"]) for group in groups] == [
+        ("2025", True, True),
+        ("2024", False, False),
+    ]
+    newest_points = cast(list[dict[str, object]], groups[0]["points"])
+    assert [point["period_iso"] for point in newest_points] == [
+        "2025-01",
+        "2025-02",
+    ]
+
+
+def test_market_summary_uses_all_exact_provider_observations() -> None:
+    assert build_market_summary(
+        [Decimal("1250.50"), Decimal("900"), Decimal("900.00"), Decimal("1800")]
+    ) == {
+        "total_count": 4,
+        "total_count_label": "4곳",
+        "minimum_machine": "900",
+        "minimum_label": "900원",
+        "maximum_machine": "1800",
+        "maximum_label": "1,800원",
+    }
+
+
+def test_presentation_summaries_fail_closed_for_missing_or_noncanonical_facts() -> None:
+    with pytest.raises(ValueError):
+        build_history_summary([])
+    with pytest.raises(ValueError):
+        build_history_year_groups(
+            [
+                MonthlyChartDatum("202501", Decimal("100"), Decimal("90"), Decimal("110")),
+                MonthlyChartDatum("202501", Decimal("100"), Decimal("90"), Decimal("110")),
+            ]
+        )
+    with pytest.raises(ValueError):
+        build_market_summary([Decimal("NaN")])
 
 
 def test_public_referrer_policy_sends_no_query_state() -> None:

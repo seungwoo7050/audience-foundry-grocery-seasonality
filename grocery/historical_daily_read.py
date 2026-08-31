@@ -15,7 +15,12 @@ from grocery.historical_public_read import (
     PublicReadIntegrityError,
 )
 from grocery.presentation import format_korean_date
-from grocery.vnext_presentation import decimal_machine, format_provider_krw, range_meter
+from grocery.vnext_presentation import (
+    build_market_summary,
+    decimal_machine,
+    format_provider_krw,
+    range_meter,
+)
 
 HISTORICAL_PAGE_SIZE: Final = 30
 
@@ -127,6 +132,10 @@ def markets_context(
             or row.market.region_id != region_id
         ):
             raise PublicReadIntegrityError("Published market prices are malformed.")
+    try:
+        market_summary = build_market_summary([row.provider_price for row in rows])
+    except ValueError as exc:
+        raise PublicReadIntegrityError("Published market summary facts are malformed.") from exc
     total = len(rows)
     total_pages = max(1, (total + HISTORICAL_PAGE_SIZE - 1) // HISTORICAL_PAGE_SIZE)
     if page > total_pages:
@@ -148,6 +157,7 @@ def markets_context(
             }
             for row in selected_rows
         ],
+        "market_summary": market_summary,
         "total_count": total,
         "page": page,
         "total_pages": total_pages,

@@ -15,9 +15,10 @@ from grocery.historical_public_read import (
 from grocery.vnext_presentation import (
     MonthlyChartDatum,
     build_history_chart,
-    decimal_machine,
-    format_provider_krw,
+    build_history_summary,
+    build_history_year_groups,
     format_year_month,
+    monthly_display_point,
 )
 
 
@@ -86,22 +87,32 @@ def history_context(
         raise PublicParameterError("The selected range is not available for this region.")
     selected_rows = _select_complete_months(rows, active.revision.month_max, selected_range)
     region = regions[selected_region_id]
+    presentation_data = [
+        MonthlyChartDatum(
+            row.year_month,
+            row.provider_mean,
+            row.provider_low,
+            row.provider_high,
+        )
+        for row in selected_rows
+    ]
+    try:
+        monthly_points = [monthly_display_point(datum) for datum in presentation_data]
+        history_summary = build_history_summary(presentation_data)
+        history_year_groups = build_history_year_groups(presentation_data)
+        history_chart = build_history_chart(presentation_data)
+    except ValueError as exc:
+        raise PublicReadIntegrityError(
+            "Published monthly presentation facts are malformed."
+        ) from exc
     base.update(
         {
             "selected_region": {"value": str(selected_region_id), "label": region.region_name},
             "range_options": _range_options(selected_range, allow_60=allow_60),
-            "monthly_points": [_monthly_point(row) for row in selected_rows],
-            "history_chart": build_history_chart(
-                [
-                    MonthlyChartDatum(
-                        row.year_month,
-                        row.provider_mean,
-                        row.provider_low,
-                        row.provider_high,
-                    )
-                    for row in selected_rows
-                ]
-            ),
+            "monthly_points": monthly_points,
+            "history_summary": history_summary,
+            "history_year_groups": history_year_groups,
+            "history_chart": history_chart,
         }
     )
     return base
@@ -155,19 +166,3 @@ def _range_options(selected_range: int, *, allow_60: bool) -> list[dict[str, obj
         {"value": str(value), "label": f"{value}개월", "selected": value == selected_range}
         for value in values
     ]
-
-
-def _monthly_point(row: MonthlyRegionalRetailPrice) -> dict[str, object]:
-    period_iso, period_label = format_year_month(row.year_month)
-    return {
-        "available": True,
-        "period_iso": period_iso,
-        "period_label": period_label,
-        "mean_machine": decimal_machine(row.provider_mean),
-        "mean_label": format_provider_krw(row.provider_mean),
-        "minimum_machine": decimal_machine(row.provider_low),
-        "minimum_label": format_provider_krw(row.provider_low),
-        "maximum_machine": decimal_machine(row.provider_high),
-        "maximum_label": format_provider_krw(row.provider_high),
-        "gap_after": False,
-    }

@@ -141,14 +141,14 @@ def test_history_and_daily_ledgers_have_row_independent_query_counts() -> None:
     active, bundle = _sealed_historical()
 
     with CaptureQueriesContext(connection) as twelve:
-        history_context(
+        twelve_context = history_context(
             active,
             bundle.series,
             selected_region_id=bundle.region.id,
             selected_range=12,
         )
     with CaptureQueriesContext(connection) as thirty_six:
-        history_context(
+        thirty_six_context = history_context(
             active,
             bundle.series,
             selected_region_id=bundle.region.id,
@@ -157,7 +157,7 @@ def test_history_and_daily_ledgers_have_row_independent_query_counts() -> None:
     with CaptureQueriesContext(connection) as regions:
         regions_context(active, bundle.series, selected_date=None)
     with CaptureQueriesContext(connection) as markets:
-        markets_context(
+        market_context = markets_context(
             active,
             bundle.series,
             region_id=bundle.region.id,
@@ -168,6 +168,40 @@ def test_history_and_daily_ledgers_have_row_independent_query_counts() -> None:
     assert len(twelve) == len(thirty_six) == 1
     assert len(regions) == 2
     assert len(markets) == 2
+    assert twelve_context["history_summary"] == {
+        "latest": {
+            "period_iso": "2025-12",
+            "period_label": "2025년 12월",
+            "mean_machine": "1000.00",
+            "mean_label": "1,000원",
+        },
+        "lowest": {
+            "period_iso": "2025-01",
+            "period_label": "2025년 1월",
+            "mean_machine": "989.00",
+            "mean_label": "989원",
+        },
+        "highest": {
+            "period_iso": "2025-12",
+            "period_label": "2025년 12월",
+            "mean_machine": "1000.00",
+            "mean_label": "1,000원",
+        },
+    }
+    year_groups = cast(list[dict[str, object]], thirty_six_context["history_year_groups"])
+    assert [(group["year"], group["open"]) for group in year_groups] == [
+        ("2025", True),
+        ("2024", False),
+        ("2023", False),
+    ]
+    assert market_context["market_summary"] == {
+        "total_count": 1,
+        "total_count_label": "1곳",
+        "minimum_machine": "1000.00",
+        "minimum_label": "1,000원",
+        "maximum_machine": "1000.00",
+        "maximum_label": "1,000원",
+    }
 
 
 @pytest.mark.django_db

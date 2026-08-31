@@ -1,3 +1,5 @@
+import pytest
+from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 from grocery.models import FetchAttempt, SourceConfiguration, build_source_artifact
@@ -34,6 +36,14 @@ def test_historical_source_mode_allows_weekly_schedule(db: None) -> None:
     )
 
     assert source.schedule_interval_hours == 168
+
+
+def test_historical_dataset_and_mode_are_an_exact_pair(db: None) -> None:
+    with pytest.raises(ValidationError):
+        create_source_configuration(
+            dataset_id="15156060",
+            publication_mode=SourceConfiguration.PublicationMode.HISTORICAL_MARKET,
+        )
 
 
 def test_partition_scope_separates_identical_page_manifests(db: None) -> None:

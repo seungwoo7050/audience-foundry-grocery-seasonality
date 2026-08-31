@@ -187,6 +187,24 @@ class SourceConfiguration(models.Model):
                 name="grocery_source_publication_mode_valid",
             ),
             models.CheckConstraint(
+                condition=(
+                    Q(dataset_id="15156060", publication_mode="HISTORICAL_MONTHLY")
+                    | Q(dataset_id="15156062", publication_mode="HISTORICAL_REGIONAL")
+                    | Q(dataset_id="15156065", publication_mode="HISTORICAL_MARKET")
+                    | (
+                        ~Q(dataset_id__in=("15156060", "15156062", "15156065"))
+                        & ~Q(
+                            publication_mode__in=(
+                                "HISTORICAL_MONTHLY",
+                                "HISTORICAL_REGIONAL",
+                                "HISTORICAL_MARKET",
+                            )
+                        )
+                    )
+                ),
+                name="grocery_source_historical_dataset_mode",
+            ),
+            models.CheckConstraint(
                 condition=Q(endpoint_scheme="https"),
                 name="grocery_source_endpoint_scheme_valid",
             ),

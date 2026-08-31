@@ -1,7 +1,13 @@
-# Phase 0 배포 직전 완료 보고서
+# Phase 0 배포 직전 완료 보고서 (역사적 기준선)
 
 검증일은 2026-08-30(KST)다. 이 보고서는 local production candidate의 증거이며 실제
 production 배포, traffic 공개나 `Phase 0 완료`를 주장하지 않는다.
+
+이 보고서는 tracked commit `d682908`까지의 Phase 0 증거를 보존합니다. 이후 frontend
+redesign commit이 추가되어 현재 vNext 시작 기준선은
+`bb0b28038243c539db2eafcfebc05144d9d59d66`이며, `main`은 GitHub 공개 remote
+`origin`과 동기화되어 있습니다. 아래의 `remote 없음`과 당시 SHA·검증값은 수정된 현재
+상태가 아니라 해당 시점의 역사적 사실로 읽습니다.
 
 현재 상태는 **Phase 0 배포 직전 완료**다. 아래 결과는 local production candidate에만 적용되며
 production platform 선택, 실제 배포와 traffic 공개는 포함하지 않는다.

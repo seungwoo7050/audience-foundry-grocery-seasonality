@@ -11,7 +11,7 @@ unexport KAMIS_API_KEY
 # DATABASE_URL, and the exact 40-character lowercase release DEPLOY_VERSION.
 # Its secret-check reads the ignored owner-only .env.local in-process; do not export
 # KAMIS_API_KEY into Make, a command argument, or a child-process environment.
-.PHONY: check db-up dependency-audit format-check license-inventory lint local-release-db-check migrate migration-check production-check production-env-check runtime-sync secret-check serve source-secret-env-check sync test type
+.PHONY: check db-up dependency-audit format-check license-inventory lint live-source-e2e-smoke local-release-db-check migrate migration-check production-check production-env-check runtime-sync secret-check serve source-secret-env-check sync test type
 
 sync:
 	$(UV_RUN) sync --frozen
@@ -69,6 +69,28 @@ production-env-check:
 source-secret-env-check:
 	@test -z "$${KAMIS_API_KEY+x}" || { echo "source_secret_environment=failed code=ambient_source_secret_inherited"; exit 2; }
 	@echo "source_secret_environment=absent"
+
+live-source-e2e-smoke: source-secret-env-check
+	@set -eu; \
+		smoke_database=grocery_vnext_live_api_smoke; \
+		created=0; \
+		cleanup() { \
+			if [ "$$created" -eq 1 ]; then \
+				docker compose exec -T db dropdb --if-exists -U grocery "$$smoke_database" >/dev/null; \
+			fi; \
+		}; \
+		trap cleanup EXIT HUP INT TERM; \
+		docker compose exec -T db createdb -U grocery "$$smoke_database"; \
+		created=1; \
+		smoke_database_url="postgresql://grocery:local-grocery-only@127.0.0.1:55434/$$smoke_database"; \
+		env PYTHONDONTWRITEBYTECODE=1 DJANGO_DEBUG=1 ADMIN_ENABLED=0 \
+			QA_STATE_PREVIEWS_ENABLED=0 CONTROL_PLANE_OPERATIONS_ENABLED=0 \
+			LIVE_SOURCE_E2E_SMOKE=1 DATABASE_URL="$$smoke_database_url" \
+			$(PYTHON) manage.py migrate --noinput; \
+		env PYTHONDONTWRITEBYTECODE=1 DJANGO_DEBUG=1 ADMIN_ENABLED=0 \
+			QA_STATE_PREVIEWS_ENABLED=0 CONTROL_PLANE_OPERATIONS_ENABLED=0 \
+			LIVE_SOURCE_E2E_SMOKE=1 DATABASE_URL="$$smoke_database_url" \
+			$(PYTHON) manage.py live_source_e2e_smoke
 
 local-release-db-check:
 	$(PYTHON) -m scripts.local_release_database_check

@@ -7,9 +7,9 @@
     <meta name="color-scheme" content="light">
     <meta
       name="description"
-      content="KAMIS가 제공한 채소류·과일류 소매 조사 평균과 비교 제공값을 확인합니다."
+      content="KAMIS가 제공한 채소·과일 소매 조사 평균과 비교값을 확인합니다."
     >
-    <title>{% block title %}농산물 조사값 살펴보기{% endblock %}</title>
+    <title>{% block title %}초록장부 | 채소·과일 소매 조사값{% endblock %}</title>
     <link rel="icon" href="{% static 'grocery/favicon.svg' %}" type="image/svg+xml">
     <link rel="stylesheet" href="{% static 'grocery/app.css' %}">
   </head>
@@ -18,27 +18,29 @@
 
     <header class="site-header">
       <div class="page-shell site-header__inner">
-        <a class="brand" href="{{ home_url|default:'/' }}" aria-label="농산물 조사값 살펴보기 홈">
-          <span class="brand__name">농산물 조사값 살펴보기</span>
-          <span class="brand__description">KAMIS가 제공한 소매 조사 자료</span>
+        <a class="brand" href="{{ home_url|default:'/' }}" aria-label="초록장부 홈">
+          <img
+            class="brand-mark"
+            src="{% static 'grocery/brand-mark.svg' %}"
+            width="44"
+            height="44"
+            alt=""
+          >
+          <span class="brand-copy">
+            <span class="brand__name">초록장부</span>
+            <span class="brand__description">채소·과일 소매 조사값</span>
+          </span>
         </a>
       </div>
     </header>
 
     <main id="main-content" class="page-shell page-main" tabindex="-1">
-      {% if qa_preview %}
-        <p class="qa-notice" role="note">로컬 화면 상태 검수용 미리보기</p>
-      {% endif %}
       {% block content %}{% endblock %}
     </main>
 
     <footer class="site-footer">
       <div class="page-shell site-footer__inner">
-        <p>
-          표시값은 KAMIS가 제공한 소매 조사 평균이며, 개별 판매처의 판매값을 나타내지
-          않습니다.
-        </p>
-        <p>검토 후 공개된 자료만 표시하며 공개 화면에서 외부 source를 직접 호출하지 않습니다.</p>
+        <p>표시값은 KAMIS 소매 조사 평균입니다. 개별 판매처의 실제 판매 금액과 다를 수 있습니다.</p>
       </div>
     </footer>
   </body>

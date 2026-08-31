@@ -505,8 +505,9 @@ job별 role-specific database credential·grant와 immutable audit를 별도로 
 ingestion과 scheduler process에서는 항상 `0`이다.
 
 actor provisioning credential은 승인된 change에서 한 번만 다음 명령을 실행한다. 두 actor는
-로그인할 수 없고 PII·staff·superuser·group이 없으며 reviewer와 publisher가 각각 정확히 하나의
-Django permission만 가진다. 기존 actor에 drift가 있으면 둘 중 어느 것도 부분 수정하지 않는다.
+로그인할 수 없고 PII·staff·superuser·group이 없으며 reviewer와 publisher가 각각 recent와
+historical에서 자기 역할에 해당하는 Django permission만 가진다. 기존 actor에 drift가 있으면
+둘 중 어느 것도 부분 수정하지 않는다.
 
 ```sh
 .venv/bin/python manage.py bootstrap_control_plane_actors \
@@ -537,6 +538,65 @@ rehearsal reason과 분리된다.
   --expected-current-revision "$EXPECTED_CURRENT_REVISION_ID" \
   --target-revision "$PUBLICATION_REVISION_ID" \
   --expected-release-sha "$RELEASE_SHA"
+```
+
+### historical collection review와 첫 publication
+
+`ingest_kamis_monthly`, `ingest_kamis_regional_daily`, `ingest_kamis_market_daily`는 각각 사람이
+승인한 exact source configuration·code manifest·partition 범위로 실행한다. 각 명령은 하나의
+완전한 `VALIDATED` collection에서 멈춘다. scheduler나 같은 job에서 review, seal 또는 activation을
+이어 실행하지 않는다. code manifest와 cross-source series·region·market mapping 등록은 독립적인
+사람 검토 checkpoint이며 command가 새 mapping을 추측하지 않는다.
+
+외부 MFA reviewer job은 세 collection을 각각 아래 명령으로 승인한다. 첫 decision의
+`--supersedes-decision`은 생략하고, 재검수 decision만 현재 tail UUID를 명시한다. evidence 원문은
+private 경계에 두고 canonical SHA-256만 전달한다.
+
+```sh
+.venv/bin/python manage.py approve_historical_collection \
+  --collection-id "$HISTORICAL_COLLECTION_ID" \
+  --decision-id "$HISTORICAL_REVIEW_ID" \
+  --reconciliation-report-sha256 "$RECONCILIATION_REPORT_SHA256" \
+  --acceptance-evidence-sha256 "$REVIEW_EVIDENCE_SHA256" \
+  --expected-release-sha "$RELEASE_SHA"
+```
+
+세 current APPROVE review가 준비된 뒤 publisher job이 별도 change에서 봉인하고, 결과 revision을
+검사한 뒤 다시 별도 change에서 exact current/version CAS로 활성화한다. 이 두 명령을 하나의
+자동 chain으로 묶지 않는다.
+
+```sh
+.venv/bin/python manage.py seal_historical_publication \
+  --monthly-review-id "$MONTHLY_REVIEW_ID" \
+  --regional-review-id "$REGIONAL_REVIEW_ID" \
+  --market-review-id "$MARKET_REVIEW_ID" \
+  --compatibility-report-sha256 "$COMPATIBILITY_REPORT_SHA256" \
+  --expected-release-sha "$RELEASE_SHA"
+
+.venv/bin/python manage.py transition_historical_publication \
+  --operation ACTIVATE \
+  --operation-id "$HISTORICAL_PUBLICATION_OPERATION_ID" \
+  --acceptance-evidence-sha256 "$HISTORICAL_PUBLICATION_EVIDENCE_SHA256" \
+  --expected-version "$EXPECTED_HISTORICAL_VERSION" \
+  --expected-current-revision "$EXPECTED_HISTORICAL_REVISION_OR_NONE" \
+  --target-revision "$HISTORICAL_PUBLICATION_REVISION_ID" \
+  --expected-release-sha "$RELEASE_SHA"
+```
+
+최초 activation은 version `0`과 current literal `NONE`을 사용한다. 같은 logical retry에만 같은
+decision·operation UUID를 재사용한다. `ACTIVATE`는 current review tail을 요구하지만,
+`ROLLBACK`은 activation history에서 previously-current였음이 확인된 sealed last-known-good를
+대상으로 한다. production actor provisioning, 첫 review·seal·activation, traffic 전환과 rollback은
+모두 사람 전용 checkpoint다.
+
+browser evidence fixture는 production command가 아니다. `DEBUG=1`, Admin 비활성, QA preview
+활성, loopback PostgreSQL, `grocery_vnext_`로 시작하는 비어 있는 DB를 모두 확인한 뒤에만 실행된다.
+핵심 source·domain·publication row가 하나라도 있으면 실패 폐쇄한다.
+
+```sh
+DJANGO_DEBUG=1 ADMIN_ENABLED=0 QA_STATE_PREVIEWS_ENABLED=1 \
+  DATABASE_URL="$DISPOSABLE_VNEXT_DATABASE_URL" \
+  .venv/bin/python scripts/build_vnext_browser_fixture.py
 ```
 
 `PUBLIC_COPY_REVISION`은 현재 `ko-v1`, `ko-v2`, `ko-v3` 또는 `ko-v4`만 허용한다. `ko-v3`는

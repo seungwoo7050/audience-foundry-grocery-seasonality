@@ -1,3 +1,5 @@
+from typing import cast
+
 from django.template.loader import render_to_string
 
 from grocery.tests.test_public_templates import catalog_context
@@ -179,7 +181,8 @@ def test_catalog_validation_reveals_and_associates_advanced_controls() -> None:
 
 def test_catalog_keeps_selection_action_in_the_compact_identity_row() -> None:
     context = catalog_context()
-    context["results"][0]["selection_url"] = "/selection/?series=first"
+    results = cast(list[dict[str, object]], context["results"])
+    results[0]["selection_url"] = "/selection/?series=first"
 
     html = render_to_string("grocery/catalog.html", context)
 

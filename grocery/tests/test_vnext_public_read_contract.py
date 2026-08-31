@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import cast
 
 import pytest
 from django.core.exceptions import ValidationError
@@ -62,13 +63,16 @@ def test_monthly_chart_never_connects_across_a_missing_month() -> None:
     ]
 
     chart = build_history_chart(data)
+    mean_segments = cast(list[dict[str, str]], chart["mean_segments"])
+    range_segments = cast(list[dict[str, str]], chart["range_segments"])
+    points = cast(list[dict[str, str]], chart["points"])
 
-    assert len(chart["mean_segments"]) == 1
-    assert len(chart["range_segments"]) == 1
-    assert len(chart["points"]) == 3
-    isolated_x = chart["points"][2]["x"]
-    assert isolated_x not in chart["mean_segments"][0]["points"]
-    assert isolated_x not in chart["range_segments"][0]["points"]
+    assert len(mean_segments) == 1
+    assert len(range_segments) == 1
+    assert len(points) == 3
+    isolated_x = points[2]["x"]
+    assert isolated_x not in mean_segments[0]["points"]
+    assert isolated_x not in range_segments[0]["points"]
     assert chart["gap_markers"] == [{"x": "490.67", "label": "2026.03"}]
     assert chart["points"] == [
         {"x": "64", "y": "195.2"},

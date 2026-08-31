@@ -1,4 +1,5 @@
 import uuid
+from typing import Protocol, cast
 
 import pytest
 from django.contrib.auth.models import Permission
@@ -14,20 +15,30 @@ from grocery.historical_publications import seal_historical_publication
 from grocery.models import (
     PriceChangeFact,
     PublicationActivation,
+    ReferencePrice,
+    RetailPriceSnapshot,
     seal_recent_publication,
     transition_recent_publication,
 )
 from grocery.public_read import (
+    ActivePublication,
     _filter_and_sort_catalog_entries,
     load_active_publication,
     publication_entries,
     publication_entries_for_series,
 )
-from grocery.tests.historical_bundle_factory import create_reviewed_historical_bundle
+from grocery.tests.historical_bundle_factory import (
+    ReviewedHistoricalBundle,
+    create_reviewed_historical_bundle,
+)
 from grocery.tests.test_publication_revision_models import create_approved_generation
 
 
-def _activate_recent(count: int):
+class _CatalogWeekSnapshot(Protocol):
+    catalog_week_references: list[ReferencePrice]
+
+
+def _activate_recent(count: int) -> tuple[ActivePublication, tuple[RetailPriceSnapshot, ...]]:
     decision, snapshots, publisher = create_approved_generation(snapshot_count=count)
     publisher.user_permissions.add(
         Permission.objects.get(content_type__app_label="grocery", codename="publish_publication")
@@ -49,7 +60,7 @@ def _activate_recent(count: int):
     return active, snapshots
 
 
-def _sealed_historical():
+def _sealed_historical() -> tuple[ActiveHistoricalPublication, ReviewedHistoricalBundle]:
     bundle = create_reviewed_historical_bundle()
     revision = seal_historical_publication(
         monthly_review_id=bundle.monthly_review.id,
@@ -73,6 +84,13 @@ def _sealed_historical():
     return active, bundle
 
 
+def _catalog_week_snapshot(snapshot: RetailPriceSnapshot) -> _CatalogWeekSnapshot:
+    references = getattr(snapshot, "catalog_week_references", None)
+    assert isinstance(references, list)
+    assert all(isinstance(reference, ReferencePrice) for reference in references)
+    return cast(_CatalogWeekSnapshot, snapshot)
+
+
 @pytest.mark.django_db
 def test_catalog_materialization_is_two_queries_for_one_or_thirty_rows() -> None:
     active, _snapshots = _activate_recent(30)
@@ -90,14 +108,15 @@ def test_catalog_materialization_rejects_missing_duplicate_and_incomplete_select
     active, _snapshots = _activate_recent(2)
     entries = publication_entries(active, query="", category="")
     entry = entries[0]
-    reference = entry.snapshot.catalog_week_references[0]
+    catalog_snapshot = _catalog_week_snapshot(entry.snapshot)
+    reference = catalog_snapshot.catalog_week_references[0]
 
     for malformed in ([], [reference, reference]):
-        entry.snapshot.catalog_week_references = malformed
+        catalog_snapshot.catalog_week_references = malformed
         with pytest.raises(ValidationError):
             _filter_and_sort_catalog_entries([entry], direction="all", sort="name")
 
-    entry.snapshot.catalog_week_references = [reference]
+    catalog_snapshot.catalog_week_references = [reference]
     original_direction = reference.change_fact.direction
     original_percentage = reference.change_fact.signed_percentage
     reference.change_fact.direction = PriceChangeFact.Direction.HIGHER
@@ -107,7 +126,7 @@ def test_catalog_materialization_rejects_missing_duplicate_and_incomplete_select
     reference.change_fact.direction = original_direction
     reference.change_fact.signed_percentage = original_percentage
 
-    entries[1].snapshot.catalog_week_references = []
+    _catalog_week_snapshot(entries[1].snapshot).catalog_week_references = []
     with pytest.raises(ValidationError):
         _filter_and_sort_catalog_entries(
             entries,

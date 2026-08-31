@@ -4,8 +4,11 @@
 
 {% block content %}
   <section class="error-page" aria-labelledby="error-heading">
+    <p class="eyebrow error-page__eyebrow">초록장부 안내</p>
     <h1 id="error-heading">요청 내용을 확인하세요</h1>
-    <p>입력한 주소나 검색 조건을 처리할 수 없습니다. 내용을 확인한 뒤 다시 시도하세요.</p>
-    <a class="button button--primary" href="{{ home_url|default:'/' }}">목록으로 돌아가기</a>
+    <p class="error-page__summary">입력한 주소나 검색 조건을 처리할 수 없습니다. 공개 목록에서 다시 찾아보세요.</p>
+    <div class="error-page__actions">
+      <a class="button button--primary" href="{{ home_url|default:'/' }}">공개 목록으로 이동</a>
+    </div>
   </section>
 {% endblock %}

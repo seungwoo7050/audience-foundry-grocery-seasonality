@@ -4,8 +4,11 @@
 
 {% block content %}
   <section class="error-page" role="alert" aria-labelledby="error-heading">
+    <p class="eyebrow error-page__eyebrow">초록장부 안내</p>
     <h1 id="error-heading">페이지를 표시하지 못했습니다</h1>
-    <p>요청을 완료하지 못했습니다. 잠시 후 다시 시도하세요.</p>
-    <a class="button button--primary" href="{{ home_url|default:'/' }}">목록으로 돌아가기</a>
+    <p class="error-page__summary">조사값을 표시하지 못했습니다. 잠시 후 공개 목록에서 다시 시도하세요.</p>
+    <div class="error-page__actions">
+      <a class="button button--primary" href="{{ home_url|default:'/' }}">공개 목록으로 이동</a>
+    </div>
   </section>
 {% endblock %}

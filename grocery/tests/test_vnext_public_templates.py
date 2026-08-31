@@ -85,6 +85,65 @@ def test_history_renders_supplementary_chart_and_exact_month_ledger() -> None:
     assert 'style="' not in html
 
 
+def test_history_leads_with_summary_and_opens_only_the_latest_year() -> None:
+    latest = {
+        "available": True,
+        "period_iso": "2026-07",
+        "period_label": "2026년 7월",
+        "mean_machine": "8000",
+        "mean_label": "8,000원",
+        "minimum_machine": "7000",
+        "minimum_label": "7,000원",
+        "maximum_machine": "9000",
+        "maximum_label": "9,000원",
+    }
+    older = {
+        **latest,
+        "period_iso": "2025-12",
+        "period_label": "2025년 12월",
+        "mean_machine": "7600",
+        "mean_label": "7,600원",
+    }
+    context = historical_base("history_state")
+    context.update(
+        {
+            "selected_region": {"label": "서울"},
+            "selected_range": {"label": "36개월"},
+            "monthly_points": [older, latest],
+            "history_summary": {
+                "latest": latest,
+                "lowest": older,
+                "highest": latest,
+            },
+            "history_year_groups": [
+                {
+                    "year": "2026",
+                    "label": "2026년",
+                    "is_latest": True,
+                    "open": True,
+                    "points": [latest],
+                },
+                {
+                    "year": "2025",
+                    "label": "2025년",
+                    "is_latest": False,
+                    "open": False,
+                    "points": [older],
+                },
+            ],
+        }
+    )
+
+    html = render_to_string("grocery/history.html", context)
+
+    assert 'class="history-summary"' in html
+    assert "최근 월평균" in html and "가장 낮은 월평균" in html
+    assert '<details class="history-year history-year--latest" open>' in html
+    assert html.index("2026년") < html.index("2025년")
+    assert html.count("<details") == 2
+    assert html.count(" open>") == 1
+
+
 def test_region_and_market_pages_keep_provider_facts_distinct() -> None:
     regions = historical_base("regions_state")
     regions.update(
@@ -113,6 +172,14 @@ def test_region_and_market_pages_keep_provider_facts_distinct() -> None:
             "selected_region": {"label": "서울"},
             "selected_date": {"iso": "2026-08-29", "label": "2026년 8월 29일"},
             "date_options": [{"value": "2026-08-29", "label": "2026년 8월 29일", "selected": True}],
+            "market_summary": {
+                "total_count": 31,
+                "total_count_label": "31곳",
+                "minimum_machine": "7900",
+                "minimum_label": "7,900원",
+                "maximum_machine": "8600",
+                "maximum_label": "8,600원",
+            },
             "market_rows": [
                 {
                     "market_name": "양곡시장",
@@ -132,6 +199,8 @@ def test_region_and_market_pages_keep_provider_facts_distinct() -> None:
     assert "시장별 값 보기" in region_html
     assert "각 값은 개별 시장 조사값이며 지역 평균이 아닙니다." in market_html
     assert "시장별 소매 조사값입니다" in market_html
+    assert 'class="market-summary"' in market_html
+    assert all(value in market_html for value in ("31곳", "7,900원", "8,600원"))
 
 
 def test_historical_blocking_states_hide_controls_and_fact_ledgers() -> None:

@@ -69,6 +69,9 @@ def test_selection_add_form_appends_to_canonical_url_order() -> None:
     second = html.index('name="series" value="22222222-2222-2222-2222-222222222222"')
     candidate = html.index('id="selection-add-item"')
     assert first < second < candidate
+    assert html.index('class="selection-section selection-results-first"') < html.index(
+        'class="selection-add"'
+    )
     assert 'class="selection-add__form" action="/selection/" method="get"' in html
     assert 'name="series" required aria-describedby="selection-add-hint"' in html
     assert "양파 · 일반 · 상품 · 1kg" in html

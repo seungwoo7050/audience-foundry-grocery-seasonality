@@ -3,7 +3,7 @@
 {% block title %}{{ series.item_name|default:"품목" }} 월별 기록 | 초록장부{% endblock %}
 
 {% block content %}
-  {% include "grocery/_historical_header.html" with page_eyebrow="월별 과거 가격 패턴" page_summary="선택한 지역에서 KAMIS가 제공한 월별 소매 조사 평균과 조사 범위를 확인합니다." %}
+  {% include "grocery/_historical_header.html" with page_eyebrow="월별 조사 기록" page_summary="선택한 지역에서 KAMIS가 제공한 월별 소매 조사 평균과 조사 범위를 함께 확인합니다." %}
 
   {% if history_state == "loading" or history_state == "unavailable" or history_state == "server_error" %}
     {% include "grocery/_state_notice.html" with state=history_state retry_url=retry_url %}
@@ -54,6 +54,44 @@
           <p>선은 월 조사 평균, 옅은 범위는 같은 달의 최저·최고 조사값입니다.</p>
         </div>
 
+        {% if history_summary %}
+          <dl class="history-summary" aria-label="월별 조사값 요약">
+            <div class="history-summary__item history-summary__item--latest">
+              <dt>최근 월평균</dt>
+              <dd>
+                <data value="{{ history_summary.latest.mean_machine }}">{{ history_summary.latest.mean_label }}</data>
+                <span class="history-summary__period">
+                  {% if history_summary.latest.period_iso %}<time datetime="{{ history_summary.latest.period_iso }}">{% endif %}
+                  {{ history_summary.latest.period_label }}
+                  {% if history_summary.latest.period_iso %}</time>{% endif %}
+                </span>
+              </dd>
+            </div>
+            <div class="history-summary__item">
+              <dt>가장 낮은 월평균</dt>
+              <dd>
+                <data value="{{ history_summary.lowest.mean_machine }}">{{ history_summary.lowest.mean_label }}</data>
+                <span class="history-summary__period">
+                  {% if history_summary.lowest.period_iso %}<time datetime="{{ history_summary.lowest.period_iso }}">{% endif %}
+                  {{ history_summary.lowest.period_label }}
+                  {% if history_summary.lowest.period_iso %}</time>{% endif %}
+                </span>
+              </dd>
+            </div>
+            <div class="history-summary__item">
+              <dt>가장 높은 월평균</dt>
+              <dd>
+                <data value="{{ history_summary.highest.mean_machine }}">{{ history_summary.highest.mean_label }}</data>
+                <span class="history-summary__period">
+                  {% if history_summary.highest.period_iso %}<time datetime="{{ history_summary.highest.period_iso }}">{% endif %}
+                  {{ history_summary.highest.period_label }}
+                  {% if history_summary.highest.period_iso %}</time>{% endif %}
+                </span>
+              </dd>
+            </div>
+          </dl>
+        {% endif %}
+
         {% if history_chart %}
           <figure class="history-chart">
             <svg
@@ -89,29 +127,65 @@
           </figure>
         {% endif %}
 
-        <div class="month-ledger">
-          <div class="month-ledger__head" aria-hidden="true">
-            <span>연월</span><span>소매 조사 평균</span><span>월 최저 조사값</span><span>월 최고 조사값</span>
-          </div>
-          <ol class="month-list">
-            {% for point in monthly_points %}
-              <li class="month-row{% if not point.available %} month-row--unavailable{% endif %}">
-                <p class="month-row__date">
-                  {% if point.period_iso %}<time datetime="{{ point.period_iso }}">{% endif %}{{ point.period_label }}{% if point.period_iso %}</time>{% endif %}
-                </p>
-                {% if point.available %}
-                  <dl class="month-row__facts">
-                    <div><dt>소매 조사 평균</dt><dd><data value="{{ point.mean_machine }}">{{ point.mean_label }}</data></dd></div>
-                    <div><dt>월 최저 조사값</dt><dd><data value="{{ point.minimum_machine }}">{{ point.minimum_label }}</data></dd></div>
-                    <div><dt>월 최고 조사값</dt><dd><data value="{{ point.maximum_machine }}">{{ point.maximum_label }}</data></dd></div>
-                  </dl>
-                {% else %}
-                  <p class="month-row__missing">{{ point.unavailable_label }}</p>
-                {% endif %}
-              </li>
+        {% if history_year_groups %}
+          <div class="history-year-groups" aria-label="연도별 월 조사 기록">
+            {% for group in history_year_groups %}
+              <details class="history-year{% if group.is_latest %} history-year--latest{% endif %}"{% if group.open %} open{% endif %}>
+                <summary>
+                  <span class="history-year__label">{{ group.label }}</span>
+                  {% if group.is_latest %}<span class="history-year__count">최근 기록</span>{% endif %}
+                </summary>
+                <div class="month-ledger">
+                  <div class="month-ledger__head" aria-hidden="true">
+                    <span>연월</span><span>소매 조사 평균</span><span>월 최저 조사값</span><span>월 최고 조사값</span>
+                  </div>
+                  <ol class="month-list">
+                    {% for point in group.points %}
+                      <li class="month-row{% if not point.available %} month-row--unavailable{% endif %}">
+                        <p class="month-row__date">
+                          {% if point.period_iso %}<time datetime="{{ point.period_iso }}">{% endif %}{{ point.period_label }}{% if point.period_iso %}</time>{% endif %}
+                        </p>
+                        {% if point.available %}
+                          <dl class="month-row__facts">
+                            <div><dt>소매 조사 평균</dt><dd><data value="{{ point.mean_machine }}">{{ point.mean_label }}</data></dd></div>
+                            <div><dt>월 최저 조사값</dt><dd><data value="{{ point.minimum_machine }}">{{ point.minimum_label }}</data></dd></div>
+                            <div><dt>월 최고 조사값</dt><dd><data value="{{ point.maximum_machine }}">{{ point.maximum_label }}</data></dd></div>
+                          </dl>
+                        {% else %}
+                          <p class="month-row__missing">{{ point.unavailable_label }}</p>
+                        {% endif %}
+                      </li>
+                    {% endfor %}
+                  </ol>
+                </div>
+              </details>
             {% endfor %}
-          </ol>
-        </div>
+          </div>
+        {% else %}
+          <div class="month-ledger">
+            <div class="month-ledger__head" aria-hidden="true">
+              <span>연월</span><span>소매 조사 평균</span><span>월 최저 조사값</span><span>월 최고 조사값</span>
+            </div>
+            <ol class="month-list">
+              {% for point in monthly_points %}
+                <li class="month-row{% if not point.available %} month-row--unavailable{% endif %}">
+                  <p class="month-row__date">
+                    {% if point.period_iso %}<time datetime="{{ point.period_iso }}">{% endif %}{{ point.period_label }}{% if point.period_iso %}</time>{% endif %}
+                  </p>
+                  {% if point.available %}
+                    <dl class="month-row__facts">
+                      <div><dt>소매 조사 평균</dt><dd><data value="{{ point.mean_machine }}">{{ point.mean_label }}</data></dd></div>
+                      <div><dt>월 최저 조사값</dt><dd><data value="{{ point.minimum_machine }}">{{ point.minimum_label }}</data></dd></div>
+                      <div><dt>월 최고 조사값</dt><dd><data value="{{ point.maximum_machine }}">{{ point.maximum_label }}</data></dd></div>
+                    </dl>
+                  {% else %}
+                    <p class="month-row__missing">{{ point.unavailable_label }}</p>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ol>
+          </div>
+        {% endif %}
       </section>
     {% else %}
       {% include "grocery/_state_notice.html" with state="server_error" retry_url=retry_url %}

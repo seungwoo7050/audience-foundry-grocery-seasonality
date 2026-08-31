@@ -9,8 +9,11 @@
 
   <header class="detail-intro">
     <div class="detail-intro__identity">
-      <p class="eyebrow">{{ series.category_label|default:"공개 조사 항목" }}</p>
-      <h1>{{ series.item_name|default:"조사값 상세" }}</h1>
+      <div class="detail-intro__lead">
+        <p class="eyebrow">{{ series.category_label|default:"공개 조사 항목" }}</p>
+        <h1>{{ series.item_name|default:"조사값 상세" }}</h1>
+        <p class="detail-intro__summary">같은 품목 조건에서 확인된 최근 조사값입니다.</p>
+      </div>
       {% if series.variety_name or series.grade_name or series.unit_label or provenance.coverage_label %}
         <dl class="detail-signature" aria-label="품목 조건 요약">
           {% if series.variety_name %}<div><dt>품종</dt><dd>{{ series.variety_name }}</dd></div>{% endif %}
@@ -19,21 +22,12 @@
           {% if provenance.coverage_label %}<div><dt>조사 범위</dt><dd>{{ provenance.coverage_label }}</dd></div>{% endif %}
         </dl>
       {% endif %}
-      {% if selection_add_url %}
-        <div class="detail-actions">
-          <a class="button button--secondary" href="{{ selection_add_url }}">선택 목록에 담기</a>
-        </div>
-      {% elif historical_links.selection_url %}
-        <div class="detail-actions">
-          <a class="button button--secondary" href="{{ historical_links.selection_url }}">선택 목록에 담기</a>
-        </div>
-      {% endif %}
     </div>
 
     {% if detail_state != "loading" and detail_state != "unavailable" and detail_state != "server_error" %}
-      <div class="current-price">
+      <section class="current-price" aria-labelledby="current-price-heading">
         <div class="current-price__heading">
-          <p class="eyebrow">KAMIS 소매 조사 평균</p>
+          <p class="eyebrow">최근 공개값</p>
           <h2 id="current-price-heading">조사일 평균</h2>
         </div>
         <p class="current-price__value">
@@ -48,21 +42,33 @@
           {% if provenance.source_date_iso %}</time>{% endif %}
         </p>
         <p class="current-price__note">개별 판매처의 판매 금액이 아닌 KAMIS 소매 조사 평균입니다.</p>
-      </div>
+      </section>
     {% endif %}
   </header>
 
-  {% if section_nav %}
-    {% include "grocery/_series_nav.html" with section_nav=section_nav series=series %}
-  {% elif historical_links %}
-    <nav class="series-nav" aria-label="{{ series.item_name }} 자료 보기">
-      <ul>
-        <li><span class="series-nav__item series-nav__item--current" aria-current="page">최근 조사값</span></li>
-        {% if historical_links.history_url %}<li><a class="series-nav__item" href="{{ historical_links.history_url }}">월별 기록</a></li>{% endif %}
-        {% if historical_links.regions_url %}<li><a class="series-nav__item" href="{{ historical_links.regions_url }}">지역별 조사값</a></li>{% endif %}
-      </ul>
-    </nav>
-  {% endif %}
+  <div class="detail-pathways">
+    {% if section_nav %}
+      {% include "grocery/_series_nav.html" with section_nav=section_nav series=series %}
+    {% elif historical_links %}
+      <nav class="series-nav" aria-label="{{ series.item_name }} 자료 보기">
+        <ul>
+          <li><span class="series-nav__item series-nav__item--current" aria-current="page">최근 조사값</span></li>
+          {% if historical_links.history_url %}<li><a class="series-nav__item" href="{{ historical_links.history_url }}">월별 기록</a></li>{% endif %}
+          {% if historical_links.regions_url %}<li><a class="series-nav__item" href="{{ historical_links.regions_url }}">지역별 조사값</a></li>{% endif %}
+        </ul>
+      </nav>
+    {% endif %}
+
+    {% if selection_add_url %}
+      <div class="detail-actions">
+        <a class="button button--secondary" href="{{ selection_add_url }}">선택 목록에 담기</a>
+      </div>
+    {% elif historical_links.selection_url %}
+      <div class="detail-actions">
+        <a class="button button--secondary" href="{{ historical_links.selection_url }}">선택 목록에 담기</a>
+      </div>
+    {% endif %}
+  </div>
 
   {% if detail_state == "loading" or detail_state == "unavailable" or detail_state == "server_error" %}
     {% include "grocery/_state_notice.html" with state=detail_state retry_url=retry_url %}

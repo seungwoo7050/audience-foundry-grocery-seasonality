@@ -3,138 +3,136 @@
 {% block title %}채소·과일 소매 조사값 | 초록장부{% endblock %}
 
 {% block content %}
-  <header class="page-heading page-heading--catalog">
-    <p class="eyebrow">KAMIS 소매 조사 평균</p>
-    <h1>채소·과일 소매 조사값</h1>
-    <p class="page-heading__summary">
-      품목을 둘러보거나 이름으로 찾아보세요. 품종·등급·판매 단위·조사 범위가 같은 값만
-      비교합니다.
+  <header class="page-heading page-heading--catalog catalog-hero">
+    <div class="catalog-hero__title">
+      <p class="eyebrow">KAMIS 소매 조사 평균</p>
+      <h1>채소·과일 소매 조사값</h1>
+    </div>
+    <p class="page-heading__summary catalog-hero__summary">
+      품목을 둘러보거나 이름으로 찾아보세요. 품종·등급·판매 단위·조사 범위가 같은 값만 비교합니다.
     </p>
   </header>
 
   {% if catalog_state != "loading" and catalog_state != "unavailable" and catalog_state != "server_error" %}
-    <section class="search-panel" aria-labelledby="catalog-search-heading">
-    <div class="search-panel__heading">
-      <h2 id="catalog-search-heading">품목 찾기</h2>
-    </div>
+    <section class="search-panel catalog-toolbar" aria-label="품목 찾기와 표시 기준">
+      {% if validation_errors %}
+        {% include "grocery/_form_errors.html" with validation_errors=validation_errors %}
+      {% elif query_error or category_error %}
+        <div id="search-error" class="form-error" role="alert">
+          <span class="form-error__symbol" aria-hidden="true">!</span>
+          <div class="form-error__content">
+            <p class="form-error__title"><strong>입력 내용을 확인하세요</strong></p>
+            <ul>
+              {% if query_error %}
+                <li>{{ query_error }} <a class="form-error__link" href="#catalog-query">품목명 입력으로 이동</a></li>
+              {% endif %}
+              {% if category_error %}
+                <li>{{ category_error }} <a class="form-error__link" href="{{ form_action }}">부류 선택 초기화</a></li>
+              {% endif %}
+            </ul>
+          </div>
+        </div>
+      {% endif %}
 
-    {% if validation_errors %}
-      {% include "grocery/_form_errors.html" with validation_errors=validation_errors %}
-    {% elif query_error or category_error %}
-      <div id="search-error" class="form-error" role="alert">
-        <span class="form-error__symbol" aria-hidden="true">!</span>
-        <div class="form-error__content">
-          <p class="form-error__title"><strong>입력 내용을 확인하세요</strong></p>
-          <ul>
-            {% if query_error %}
-              <li>{{ query_error }} <a class="form-error__link" href="#catalog-query">품목명 입력으로 이동</a></li>
-            {% endif %}
-            {% if category_error %}
-              <li>{{ category_error }} <a class="form-error__link" href="{{ form_action }}">부류 선택 초기화</a></li>
-            {% endif %}
+      {% if categories %}
+        <nav class="category-nav" aria-label="부류 선택">
+          <ul class="segment-list">
+            {% for category in categories %}
+              <li>
+                <a
+                  class="segment{% if category.selected %} segment--selected{% endif %}"
+                  href="{{ category.url }}"
+                  {% if category.selected %}aria-current="page"{% endif %}
+                >
+                  {% if category.selected %}<span class="segment__selected-mark" aria-hidden="true">✓</span>{% endif %}
+                  <span>{{ category.label }}</span>
+                </a>
+              </li>
+            {% endfor %}
           </ul>
-        </div>
-      </div>
-    {% endif %}
+        </nav>
+      {% endif %}
 
-    {% if categories %}
-      <nav class="category-nav" aria-label="부류 선택">
-        <ul class="segment-list">
-          {% for category in categories %}
-            <li>
-              <a
-                class="segment{% if category.selected %} segment--selected{% endif %}"
-                href="{{ category.url }}"
-                {% if category.selected %}aria-current="page"{% endif %}
+      <div class="catalog-toolbar__tools">
+        <details class="catalog-search"{% if search_open or query_error %} open{% endif %}>
+          <summary>품목명으로 찾기</summary>
+          <form class="search-form" action="{{ form_action|default:'' }}" method="get" role="search">
+            <div class="field-group">
+              <label for="catalog-query">품목명</label>
+              <p id="catalog-query-hint" class="field-hint">KAMIS 공식 품목명으로 검색하세요. 예: 배추, 사과</p>
+              <input
+                id="catalog-query"
+                name="q"
+                type="search"
+                maxlength="80"
+                autocomplete="off"
+                enterkeyhint="search"
+                aria-describedby="catalog-query-hint{% if query_error and validation_errors %} validation-title{% elif query_error %} search-error{% endif %}"
+                {% if query_error %}aria-invalid="true"{% endif %}
               >
-                {% if category.selected %}<span class="segment__selected-mark" aria-hidden="true">✓</span>{% endif %}
-                <span>{{ category.label }}</span>
-              </a>
-            </li>
-          {% endfor %}
-        </ul>
-      </nav>
-    {% endif %}
+            </div>
+            {% if selected_category %}
+              <input type="hidden" name="category" value="{{ selected_category }}">
+            {% endif %}
+            {% if selected_period and selected_period != "week" %}<input type="hidden" name="period" value="{{ selected_period }}">{% endif %}
+            {% if selected_direction and selected_direction != "all" %}<input type="hidden" name="direction" value="{{ selected_direction }}">{% endif %}
+            {% if selected_sort and selected_sort != "name" %}<input type="hidden" name="sort" value="{{ selected_sort }}">{% endif %}
+            <button class="button button--primary" type="submit">검색</button>
+          </form>
+        </details>
 
-    <details class="catalog-search"{% if search_open or query_error %} open{% endif %}>
-      <summary>품목명으로 찾기</summary>
-      <form class="search-form" action="{{ form_action|default:'' }}" method="get" role="search">
-        <div class="field-group">
-          <label for="catalog-query">품목명</label>
-          <p id="catalog-query-hint" class="field-hint">KAMIS 공식 품목명으로 검색하세요. 예: 배추, 사과</p>
-          <input
-            id="catalog-query"
-            name="q"
-            type="search"
-            maxlength="80"
-            autocomplete="off"
-            enterkeyhint="search"
-            aria-describedby="catalog-query-hint{% if query_error and validation_errors %} validation-title{% elif query_error %} search-error{% endif %}"
-            {% if query_error %}aria-invalid="true"{% endif %}
-          >
-        </div>
-        {% if selected_category %}
-          <input type="hidden" name="category" value="{{ selected_category }}">
+        {% if period_options and direction_options and sort_options %}
+          <details class="catalog-options"{% if filters_open or period_error or direction_error or sort_error %} open{% endif %}>
+            <summary>
+              <span>비교·정렬 기준</span>
+              <span class="catalog-options__current">
+                {{ selected_period_label|default:"1주 비교" }} · {{ selected_sort_label|default:"품목명 순" }}
+              </span>
+            </summary>
+            <form class="filter-form" action="{{ form_action|default:'' }}" method="get">
+              {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
+              <div class="field-group">
+                <label for="catalog-period">비교 기간</label>
+                <select
+                  id="catalog-period"
+                  name="period"
+                  {% if period_error %}aria-invalid="true" aria-describedby="validation-title"{% endif %}
+                >
+                  {% for option in period_options %}
+                    <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="catalog-direction">변화 방향</label>
+                <select
+                  id="catalog-direction"
+                  name="direction"
+                  {% if direction_error %}aria-invalid="true" aria-describedby="validation-title"{% endif %}
+                >
+                  {% for option in direction_options %}
+                    <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="field-group">
+                <label for="catalog-sort">표시 순서</label>
+                <select
+                  id="catalog-sort"
+                  name="sort"
+                  {% if sort_error %}aria-invalid="true" aria-describedby="validation-title"{% endif %}
+                >
+                  {% for option in sort_options %}
+                    <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <button class="button button--secondary" type="submit">기준 적용</button>
+            </form>
+            <p class="catalog-options__note">가격이 아니라 같은 품목 조건의 변화율을 기준으로 정렬합니다.</p>
+          </details>
         {% endif %}
-        {% if selected_period and selected_period != "week" %}<input type="hidden" name="period" value="{{ selected_period }}">{% endif %}
-        {% if selected_direction and selected_direction != "all" %}<input type="hidden" name="direction" value="{{ selected_direction }}">{% endif %}
-        {% if selected_sort and selected_sort != "name" %}<input type="hidden" name="sort" value="{{ selected_sort }}">{% endif %}
-        <button class="button button--primary" type="submit">검색</button>
-      </form>
-    </details>
-
-    {% if period_options and direction_options and sort_options %}
-      <details class="catalog-options"{% if filters_open or period_error or direction_error or sort_error %} open{% endif %}>
-        <summary>
-          <span>비교·정렬 기준</span>
-          <span class="catalog-options__current">
-            {{ selected_period_label|default:"1주 비교" }}
-            · {{ selected_sort_label|default:"품목명 순" }}
-          </span>
-        </summary>
-        <form class="filter-form" action="{{ form_action|default:'' }}" method="get">
-          {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
-          <div class="field-group">
-            <label for="catalog-period">비교 기간</label>
-            <select
-              id="catalog-period"
-              name="period"
-              {% if period_error %}aria-invalid="true" aria-describedby="validation-title"{% endif %}
-            >
-              {% for option in period_options %}
-                <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="field-group">
-            <label for="catalog-direction">변화 방향</label>
-            <select
-              id="catalog-direction"
-              name="direction"
-              {% if direction_error %}aria-invalid="true" aria-describedby="validation-title"{% endif %}
-            >
-              {% for option in direction_options %}
-                <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="field-group">
-            <label for="catalog-sort">표시 순서</label>
-            <select
-              id="catalog-sort"
-              name="sort"
-              {% if sort_error %}aria-invalid="true" aria-describedby="validation-title"{% endif %}
-            >
-              {% for option in sort_options %}
-                <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <button class="button button--secondary" type="submit">기준 적용</button>
-        </form>
-        <p class="catalog-options__note">가격이 아니라 같은 품목 조건의 변화율을 기준으로 정렬합니다.</p>
-      </details>
-    {% endif %}
+      </div>
     </section>
   {% endif %}
 
@@ -149,11 +147,16 @@
     {% if results %}
       <section class="catalog-results" aria-labelledby="catalog-results-heading">
         <div class="section-heading catalog-results__heading">
-          <h2 id="catalog-results-heading">공개 항목</h2>
+          <div>
+            <p class="eyebrow">검토를 마친 공개 자료</p>
+            <h2 id="catalog-results-heading">품목별 조사값</h2>
+          </div>
           {% if result_count_label %}<p class="result-count" aria-live="polite">{{ result_count_label }}</p>{% endif %}
         </div>
 
-        {% include "grocery/_publication_summary.html" with publication=publication %}
+        <div class="catalog-meta">
+          {% include "grocery/_publication_summary.html" with publication=publication %}
+        </div>
 
         {% regroup results by category_label as result_groups %}
         <div class="catalog-ledger">

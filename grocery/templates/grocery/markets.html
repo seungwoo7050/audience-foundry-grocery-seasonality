@@ -18,8 +18,9 @@
 
     <section class="market-scope" aria-labelledby="market-scope-heading">
       <div>
-        <p class="eyebrow">선택 지역</p>
+        <p class="eyebrow">시장 조사 범위</p>
         <h2 id="market-scope-heading">{{ selected_region.label }}</h2>
+        <p>같은 지역 안에서 확인된 개별 시장 조사값입니다.</p>
       </div>
       <form class="scope-form scope-form--date" action="{{ markets_form_action|default:'' }}" method="get">
         <div class="field-group">
@@ -44,6 +45,24 @@
           </div>
           {% if result_count_label %}<p class="result-count">{{ result_count_label }}</p>{% endif %}
         </div>
+
+        {% if market_summary %}
+          <dl class="market-summary" aria-label="시장별 조사값 요약">
+            <div class="market-summary__item market-summary__item--count">
+              <dt>확인된 시장</dt>
+              <dd>{{ market_summary.total_count_label }}</dd>
+            </div>
+            <div class="market-summary__item">
+              <dt>가장 낮은 조사값</dt>
+              <dd><data value="{{ market_summary.minimum_machine }}">{{ market_summary.minimum_label }}</data></dd>
+            </div>
+            <div class="market-summary__item">
+              <dt>가장 높은 조사값</dt>
+              <dd><data value="{{ market_summary.maximum_machine }}">{{ market_summary.maximum_label }}</data></dd>
+            </div>
+          </dl>
+        {% endif %}
+
         <p class="section-note">시장명은 KAMIS 공식 이름 순서로 표시합니다. 각 값은 개별 시장 조사값이며 지역 평균이 아닙니다.</p>
 
         <div class="market-ledger">

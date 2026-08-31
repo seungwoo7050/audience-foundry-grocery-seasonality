@@ -16,9 +16,10 @@
 
     {% include "grocery/_publication_summary.html" with publication=historical_publication publication_label="지역별 공개 자료 정보" %}
 
-    <section class="scope-controls scope-controls--compact" aria-labelledby="regions-date-heading">
+    <section class="scope-controls scope-controls--compact region-scope" aria-labelledby="regions-date-heading">
       <div class="scope-controls__heading">
-        <h2 id="regions-date-heading">조사일</h2>
+        <p class="eyebrow">비교 기준</p>
+        <h2 id="regions-date-heading">조사일 선택</h2>
         <p>지역과 시장 자료가 함께 확인된 실제 조사일만 선택할 수 있습니다.</p>
       </div>
       <form class="scope-form scope-form--date" action="{{ regions_form_action|default:'' }}" method="get">
@@ -37,11 +38,13 @@
     {% if regions_state == "validation" %}
     {% elif regional_rows %}
       <section class="region-section" aria-labelledby="regions-heading">
-        <div class="section-heading section-heading--stacked">
-          <p class="eyebrow">{% if selected_date.iso %}<time datetime="{{ selected_date.iso }}">{% endif %}{{ selected_date.label }}{% if selected_date.iso %}</time>{% endif %}</p>
-          <h2 id="regions-heading">지역별 조사 범위</h2>
-          <p>지역은 KAMIS 공식 지역명 순서로 표시합니다. 선의 양 끝은 최저·최고, 점은 평균입니다.</p>
-        </div>
+        <header class="section-heading region-section__intro">
+          <div>
+            <p class="eyebrow">{% if selected_date.iso %}<time datetime="{{ selected_date.iso }}">{% endif %}{{ selected_date.label }}{% if selected_date.iso %}</time>{% endif %}</p>
+            <h2 id="regions-heading">지역별 조사 범위</h2>
+          </div>
+          <p>선의 양 끝은 최저·최고 조사값, 점은 지역 평균입니다. 지역은 KAMIS 공식 이름 순서로 표시합니다.</p>
+        </header>
 
         <div class="region-ledger">
           <div class="region-ledger__head" aria-hidden="true">

@@ -4,8 +4,11 @@
 
 {% block content %}
   <section class="error-page" aria-labelledby="error-heading">
+    <p class="eyebrow error-page__eyebrow">초록장부 안내</p>
     <h1 id="error-heading">이 페이지를 볼 수 없습니다</h1>
-    <p>공개된 조사값은 목록에서 확인할 수 있습니다.</p>
-    <a class="button button--primary" href="{{ home_url|default:'/' }}">공개 목록으로 이동</a>
+    <p class="error-page__summary">요청한 화면은 공개되어 있지 않습니다. 공개된 조사값은 목록에서 확인할 수 있습니다.</p>
+    <div class="error-page__actions">
+      <a class="button button--primary" href="{{ home_url|default:'/' }}">공개 목록으로 이동</a>
+    </div>
   </section>
 {% endblock %}

@@ -56,29 +56,32 @@
       </nav>
     {% endif %}
 
-    <form class="search-form" action="{{ form_action|default:'' }}" method="get" role="search">
-      <div class="field-group">
-        <label for="catalog-query">품목명</label>
-        <p id="catalog-query-hint" class="field-hint">KAMIS 공식 품목명으로 검색하세요. 예: 배추, 사과</p>
-        <input
-          id="catalog-query"
-          name="q"
-          type="search"
-          maxlength="80"
-          autocomplete="off"
-          enterkeyhint="search"
-          aria-describedby="catalog-query-hint{% if query_error and validation_errors %} validation-title{% elif query_error %} search-error{% endif %}"
-          {% if query_error %}aria-invalid="true"{% endif %}
-        >
-      </div>
-      {% if selected_category %}
-        <input type="hidden" name="category" value="{{ selected_category }}">
-      {% endif %}
-      {% if selected_period and selected_period != "week" %}<input type="hidden" name="period" value="{{ selected_period }}">{% endif %}
-      {% if selected_direction and selected_direction != "all" %}<input type="hidden" name="direction" value="{{ selected_direction }}">{% endif %}
-      {% if selected_sort and selected_sort != "name" %}<input type="hidden" name="sort" value="{{ selected_sort }}">{% endif %}
-      <button class="button button--primary" type="submit">검색</button>
-    </form>
+    <details class="catalog-search"{% if search_open or query_error %} open{% endif %}>
+      <summary>품목명으로 찾기</summary>
+      <form class="search-form" action="{{ form_action|default:'' }}" method="get" role="search">
+        <div class="field-group">
+          <label for="catalog-query">품목명</label>
+          <p id="catalog-query-hint" class="field-hint">KAMIS 공식 품목명으로 검색하세요. 예: 배추, 사과</p>
+          <input
+            id="catalog-query"
+            name="q"
+            type="search"
+            maxlength="80"
+            autocomplete="off"
+            enterkeyhint="search"
+            aria-describedby="catalog-query-hint{% if query_error and validation_errors %} validation-title{% elif query_error %} search-error{% endif %}"
+            {% if query_error %}aria-invalid="true"{% endif %}
+          >
+        </div>
+        {% if selected_category %}
+          <input type="hidden" name="category" value="{{ selected_category }}">
+        {% endif %}
+        {% if selected_period and selected_period != "week" %}<input type="hidden" name="period" value="{{ selected_period }}">{% endif %}
+        {% if selected_direction and selected_direction != "all" %}<input type="hidden" name="direction" value="{{ selected_direction }}">{% endif %}
+        {% if selected_sort and selected_sort != "name" %}<input type="hidden" name="sort" value="{{ selected_sort }}">{% endif %}
+        <button class="button button--primary" type="submit">검색</button>
+      </form>
+    </details>
 
     {% if period_options and direction_options and sort_options %}
       <details class="catalog-options"{% if filters_open or period_error or direction_error or sort_error %} open{% endif %}>

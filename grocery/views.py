@@ -79,6 +79,7 @@ def catalog(request: HttpRequest) -> HttpResponse:
                 "period_error": "period" in form.errors,
                 "direction_error": "direction" in form.errors,
                 "sort_error": "sort" in form.errors,
+                "search_open": "q" in form.errors,
                 "filters_open": True,
                 "validation_errors": (
                     _validation_errors(
@@ -173,6 +174,7 @@ def catalog(request: HttpRequest) -> HttpResponse:
                 if not query
                 else None,
                 "selection_url": reverse("grocery:selection"),
+                "search_open": bool(query),
             }
         )
         response = render(request, "grocery/catalog.html", context)
@@ -331,6 +333,7 @@ def _catalog_base_context(
         "selected_period_heading": period_labels[period],
         "selected_period_missing_label": f"{period_labels[period]}값 없음",
         "selected_sort_label": sort_labels[sort],
+        "search_open": False,
         "filters_open": period != "week" or direction != "all" or sort != "name",
         "period_options": _choice_options(PERIOD_CHOICES, period),
         "direction_options": _choice_options(DIRECTION_CHOICES, direction),

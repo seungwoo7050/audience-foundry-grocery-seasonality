@@ -73,3 +73,28 @@ def regional_row() -> dict[str, str]:
         "exmn_dd_max_prc": "1200",
         "exmn_dd_cnvs_max_prc": "120.75",
     }
+
+
+def market_row() -> dict[str, str]:
+    return {
+        "exmn_ymd": "20260831",
+        "se_cd": "01",
+        "se_nm": "소매",
+        "ctgry_cd": "200",
+        "ctgry_nm": "채소류",
+        "item_cd": "212",
+        "item_nm": "양배추",
+        "vrty_cd": "00",
+        "vrty_nm": "양배추",
+        "grd_cd": "04",
+        "grd_nm": "상품",
+        "sgg_cd": "11000",
+        "sgg_nm": "서울",
+        "unit": "포기",
+        "unit_sz": "1",
+        "mrkt_cd": "110001",
+        "mrkt_nm": "합성서울시장",
+        "exmn_dd_prc": "1000.50",
+        "exmn_dd_cnvs_prc": "77.25",
+        "orgnl_reg_dt": "2026-08-31 12:00:00",
+    }

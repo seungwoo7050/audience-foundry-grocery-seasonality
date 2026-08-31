@@ -1,5 +1,6 @@
 # Production 배포 체크리스트
 
+- 처음 배포하는 사람을 위한 화면별 안내: [초록장부 첫 Production 배포 가이드](FIRST-PRODUCTION-DEPLOYMENT-GUIDE.md)
 - 기준 절차: [운영 런북](OPERATIONS-RUNBOOK.md)
 - 완료 증거 형식: secret·query·사용자 입력을 제외한 immutable locator와 SHA-256
 - 판정: `STOP` 항목이 하나라도 미완료면 migration·publication·traffic 전환 중단

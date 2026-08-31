@@ -11,6 +11,9 @@ from django.utils import timezone
 
 from grocery.pricing import Direction
 
+MICROBAR_PERCENT_CAP: Final = Decimal("50.0")
+MICROBAR_ZERO_X: Final = Decimal("50.0")
+
 _DIRECTION_LABELS: Final = MappingProxyType(
     {
         Direction.LOWER.value: "낮음",
@@ -46,6 +49,42 @@ def format_signed_percentage(value: Decimal) -> str:
     if value > 0:
         return f"+{value:.1f}%"
     return f"{value:.1f}%"
+
+
+def comparison_microbar(value: Decimal, direction: str) -> dict[str, Decimal | bool]:
+    """Return bounded, template-safe SVG geometry for one signed comparison."""
+
+    # Reuse the public percentage contract before deriving any geometry.
+    format_signed_percentage(value)
+    expected_direction = (
+        Direction.LOWER.value
+        if value < 0
+        else Direction.HIGHER.value
+        if value > 0
+        else Direction.EQUAL.value
+    )
+    if direction != expected_direction:
+        raise ValueError("Comparison direction does not match the signed percentage")
+
+    magnitude = min(abs(value), MICROBAR_PERCENT_CAP)
+    capped = abs(value) > MICROBAR_PERCENT_CAP
+    if direction == Direction.LOWER.value:
+        x = MICROBAR_ZERO_X - magnitude
+        cap_x = x
+    elif direction == Direction.HIGHER.value:
+        x = MICROBAR_ZERO_X
+        cap_x = MICROBAR_ZERO_X + magnitude
+    else:
+        x = MICROBAR_ZERO_X
+        cap_x = MICROBAR_ZERO_X
+
+    return {
+        "x": x,
+        "width": magnitude,
+        "capped": capped,
+        "cap_x": cap_x,
+        "is_equal": direction == Direction.EQUAL.value,
+    }
 
 
 def direction_label(direction: str) -> str:

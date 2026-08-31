@@ -5,6 +5,9 @@ from typing import Protocol
 import pytest
 
 from grocery.presentation import (
+    MICROBAR_PERCENT_CAP,
+    MICROBAR_ZERO_X,
+    comparison_microbar,
     direction_label,
     direction_symbol,
     format_absolute_krw,
@@ -46,6 +49,96 @@ def test_difference_label_uses_absolute_amount_next_to_direction() -> None:
 )
 def test_signed_percentage_format(value: Decimal, expected: str) -> None:
     assert format_signed_percentage(value) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "direction", "expected"),
+    [
+        (
+            Decimal("-20.0"),
+            "LOWER",
+            {
+                "x": Decimal("30.0"),
+                "width": Decimal("20.0"),
+                "capped": False,
+                "cap_x": Decimal("30.0"),
+                "is_equal": False,
+            },
+        ),
+        (
+            Decimal("25.0"),
+            "HIGHER",
+            {
+                "x": Decimal("50.0"),
+                "width": Decimal("25.0"),
+                "capped": False,
+                "cap_x": Decimal("75.0"),
+                "is_equal": False,
+            },
+        ),
+        (
+            Decimal("0.0"),
+            "EQUAL",
+            {
+                "x": Decimal("50.0"),
+                "width": Decimal("0.0"),
+                "capped": False,
+                "cap_x": Decimal("50.0"),
+                "is_equal": True,
+            },
+        ),
+    ],
+)
+def test_comparison_microbar_uses_decimal_geometry_around_fixed_zero(
+    value: Decimal,
+    direction: str,
+    expected: dict[str, Decimal | bool],
+) -> None:
+    assert MICROBAR_PERCENT_CAP == Decimal("50.0")
+    assert MICROBAR_ZERO_X == Decimal("50.0")
+    assert comparison_microbar(value, direction) == expected
+
+
+@pytest.mark.parametrize(
+    ("value", "direction", "expected_x", "expected_cap_x"),
+    [
+        (Decimal("-80.0"), "LOWER", Decimal("0.0"), Decimal("0.0")),
+        (Decimal("75.0"), "HIGHER", Decimal("50.0"), Decimal("100.0")),
+    ],
+)
+def test_comparison_microbar_caps_large_values_at_fifty_percent(
+    value: Decimal,
+    direction: str,
+    expected_x: Decimal,
+    expected_cap_x: Decimal,
+) -> None:
+    geometry = comparison_microbar(value, direction)
+
+    assert geometry == {
+        "x": expected_x,
+        "width": Decimal("50.0"),
+        "capped": True,
+        "cap_x": expected_cap_x,
+        "is_equal": False,
+    }
+
+
+@pytest.mark.parametrize(
+    ("value", "direction"),
+    [
+        (Decimal("1.0"), "LOWER"),
+        (Decimal("-1.0"), "HIGHER"),
+        (Decimal("0.0"), "UNAVAILABLE"),
+        (Decimal("NaN"), "EQUAL"),
+        (Decimal("1.25"), "HIGHER"),
+    ],
+)
+def test_comparison_microbar_rejects_malformed_numeric_or_direction_pairs(
+    value: Decimal,
+    direction: str,
+) -> None:
+    with pytest.raises(ValueError):
+        comparison_microbar(value, direction)
 
 
 @pytest.mark.parametrize(

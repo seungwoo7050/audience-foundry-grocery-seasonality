@@ -27,7 +27,8 @@
 세 응답은 모두 JSON이며 live envelope는 공식 Swagger 설명과 달리 최상위
 `response.header`와 `response.body` wrapper를 사용했다. `body.items.item`은 배열이고,
 page metadata는 integer, item property는 이번 non-empty canary에서 모두 string이었다.
-adapter는 wrapper 없는 JSON을 허용하거나 자동 추측하지 않고 이 live shape에 실패 폐쇄한다.
+성공 `resultCode` literal은 string `0`이었다. adapter는 wrapper 없는 JSON이나 다른 성공
+literal을 허용하거나 자동 추측하지 않고 이 live shape에 실패 폐쇄한다.
 
 ## 증명한 것과 증명하지 않은 것
 

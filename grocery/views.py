@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from decimal import Decimal
 from typing import Final
 from urllib.parse import urlencode
 
@@ -17,26 +18,34 @@ from django.views.decorators.http import require_safe
 
 from grocery.forms import QUERY_MAX_LENGTH, SearchForm
 from grocery.observability import log_event
+from grocery.presentation import comparison_microbar
 from grocery.public_read import (
     catalog_item,
     detail_context,
     load_active_publication,
+    publication_context,
     publication_entries,
 )
 
 _LOGGER: Final = logging.getLogger("grocery.audit")
 _QA_STATES: Final = frozenset({"loading", "empty", "unavailable", "stale", "server_error"})
 _QA_DETAIL_STATES: Final = frozenset({"loading", "unavailable", "stale", "server_error"})
+_QA_ERROR_STATES: Final = {
+    "error_400": ("400.html", 400),
+    "error_403": ("403.html", 403),
+    "error_404": ("404.html", 404),
+    "error_500": ("500.html", 500),
+}
 _QUERY_ERROR_MESSAGES: Final = {
-    "max_length": f"검색어는 {QUERY_MAX_LENGTH}자 이하여야 합니다.",
-    "unsafe": "검색어에는 줄바꿈이나 제어 문자를 사용할 수 없습니다.",
+    "max_length": f"품목명은 {QUERY_MAX_LENGTH}자 이하로 입력하세요.",
+    "unsafe": "품목명은 한 줄로 입력하세요.",
 }
 _QA_STATE_MESSAGES: Final = {
-    "loading": "검토되어 공개된 조사값을 확인하고 있습니다.",
-    "empty": "검색어를 줄이거나 다른 부류를 선택해 보세요.",
-    "unavailable": "현재 공개할 수 있는 검토 완료 자료가 없습니다.",
-    "stale": "마지막 검토 자료를 표시하며 새 수집 상태를 확인하고 있습니다.",
-    "server_error": "잠시 후 다시 시도해 주세요.",
+    "loading": "공개된 자료를 확인하는 동안 잠시 기다려 주세요.",
+    "empty": "품목명을 바꾸거나 다른 부류를 선택하세요.",
+    "unavailable": "검토를 마친 자료가 공개되면 이곳에 표시됩니다.",
+    "stale": "최근 자료 확인이 필요합니다. 마지막으로 검토를 마친 조사값을 표시합니다.",
+    "server_error": "잠시 후 다시 불러오세요.",
 }
 
 
@@ -70,7 +79,7 @@ def catalog(request: HttpRequest) -> HttpResponse:
                 {
                     "catalog_state": "unavailable",
                     "results": [],
-                    "status_message": "현재 공개할 수 있는 검토 완료 자료가 없습니다.",
+                    "status_message": "검토를 마친 자료가 공개되면 이곳에 표시됩니다.",
                 }
             )
             return render(request, "grocery/catalog.html", context)
@@ -90,22 +99,23 @@ def catalog(request: HttpRequest) -> HttpResponse:
                 "status_message": (
                     active.stale_message
                     if active.stale_message
-                    else "검색 조건에 맞는 공개 항목이 없습니다."
+                    else "품목명을 바꾸거나 다른 부류를 선택하세요."
                 ),
                 "results": results,
                 "result_count_label": f"공개 항목 {len(results)}개",
+                "publication": publication_context(active),
             }
         )
         response = render(request, "grocery/catalog.html", context)
         return _publication_response(response, active.revision.typed_fact_set_sha256)
-    except DatabaseError, ValidationError:
+    except (DatabaseError, ValidationError):  # fmt: skip
         log_event(_LOGGER, "ERROR", "public.catalog.unavailable")
         context = _catalog_base_context(category=category)
         context.update(
             {
                 "catalog_state": "server_error",
                 "results": [],
-                "status_message": "잠시 후 다시 시도해 주세요.",
+                "status_message": "잠시 후 다시 불러오세요.",
                 "retry_url": reverse("grocery:catalog"),
             }
         )
@@ -133,19 +143,20 @@ def detail(request: HttpRequest, series_id: uuid.UUID) -> HttpResponse:
             "catalog_url": reverse("grocery:catalog"),
             "detail_state": active.freshness_state if active.stale_message else "ready",
             "status_message": active.stale_message,
+            "publication": publication_context(active),
             **detail_context(entry, active),
         }
         response = render(request, "grocery/detail.html", context)
         return _publication_response(response, active.revision.typed_fact_set_sha256)
     except Http404:
         raise
-    except DatabaseError, ObjectDoesNotExist, ValidationError:
+    except (DatabaseError, ObjectDoesNotExist, ValidationError):  # fmt: skip
         log_event(_LOGGER, "ERROR", "public.detail.unavailable")
         context = {
             "home_url": reverse("grocery:catalog"),
             "catalog_url": reverse("grocery:catalog"),
             "detail_state": "server_error",
-            "status_message": "잠시 후 다시 시도해 주세요.",
+            "status_message": "잠시 후 다시 불러오세요.",
             "retry_url": request.path,
         }
         return render(request, "grocery/detail.html", context, status=503)
@@ -153,7 +164,18 @@ def detail(request: HttpRequest, series_id: uuid.UUID) -> HttpResponse:
 
 @require_safe
 def qa_catalog_state(request: HttpRequest, state: str) -> HttpResponse:
-    if not settings.QA_STATE_PREVIEWS_ENABLED or state not in _QA_STATES:
+    if not settings.QA_STATE_PREVIEWS_ENABLED:
+        raise Http404
+    error_preview = _QA_ERROR_STATES.get(state)
+    if error_preview is not None:
+        template_name, status = error_preview
+        return render(
+            request,
+            template_name,
+            {"home_url": reverse("grocery:catalog"), "qa_preview": True},
+            status=status,
+        )
+    if state not in _QA_STATES:
         raise Http404
     context = _catalog_base_context(category="vegetable")
     context.update(
@@ -164,6 +186,7 @@ def qa_catalog_state(request: HttpRequest, state: str) -> HttpResponse:
             "retry_url": request.path,
             "results": _qa_results() if state == "stale" else [],
             "result_count_label": "공개 항목 1개" if state == "stale" else "공개 항목 0개",
+            "publication": _qa_publication_context() if state == "stale" else {},
         }
     )
     return render(
@@ -230,10 +253,10 @@ def _query_error(form: SearchForm) -> str:
     errors = form.errors.as_data().get("q", [])
     if not errors:
         return ""
-    return _QUERY_ERROR_MESSAGES.get(errors[0].code or "", "검색어를 확인해 주세요.")
+    return _QUERY_ERROR_MESSAGES.get(errors[0].code or "", "품목명을 확인하세요.")
 
 
-def _qa_results() -> list[dict[str, str]]:
+def _qa_results() -> list[dict[str, object]]:
     return [
         {
             "url": reverse("grocery:qa_detail_state", kwargs={"state": "stale"}),
@@ -246,7 +269,20 @@ def _qa_results() -> list[dict[str, str]]:
             "source_date_iso": "2026-08-29",
             "source_date_label": "2026년 8월 29일",
             "freshness_state": "stale",
-            "freshness_label": "마지막 검토 자료 · 새 확인 필요",
+            "freshness_label": "마지막 공개 자료 · 최근 확인 필요",
+            "week_comparison": {
+                "period_label": "1주 전 제공값",
+                "available": True,
+                "reference_price_display": "125,456원",
+                "difference_display": "2,000원",
+                "percentage_display": "-1.6%",
+                "direction_code": "LOWER",
+                "direction_label": "낮음",
+                "reference_date_display": "",
+                "reference_date_unavailable": True,
+                "unavailable_reason": "",
+                "microbar": comparison_microbar(Decimal("-1.6"), "LOWER"),
+            },
         }
     ]
 
@@ -266,28 +302,41 @@ def _qa_detail_ready_context() -> dict[str, object]:
             {
                 "period_label": "1주 전 제공값",
                 "available": True,
-                "reference_value_label": "125,456원",
-                "difference_label": "2,000원",
-                "percentage_label": "-1.6%",
+                "reference_price_display": "125,456원",
+                "difference_display": "2,000원",
+                "percentage_display": "-1.6%",
                 "direction_code": "LOWER",
                 "direction_label": "낮음",
-                "reference_date_available": False,
+                "reference_date_display": "2026년 8월 22일",
+                "reference_date_unavailable": False,
+                "unavailable_reason": "",
+                "microbar": comparison_microbar(Decimal("-1.6"), "LOWER"),
             },
             {
                 "period_label": "1개월 전 제공값",
                 "available": False,
-                "unavailable_reason_label": "source 응답에 비교 제공값이 없습니다.",
-                "reference_date_available": False,
+                "reference_price_display": "",
+                "difference_display": "",
+                "percentage_display": "",
+                "direction_code": "UNAVAILABLE",
+                "direction_label": "비교 정보 없음",
+                "reference_date_display": "",
+                "reference_date_unavailable": True,
+                "unavailable_reason": "KAMIS가 이 기간의 비교값을 제공하지 않았습니다.",
+                "microbar": None,
             },
             {
                 "period_label": "1년 전 제공값",
                 "available": True,
-                "reference_value_label": "123,456원",
-                "difference_label": "0원",
-                "percentage_label": "0.0%",
+                "reference_price_display": "123,456원",
+                "difference_display": "0원",
+                "percentage_display": "0.0%",
                 "direction_code": "EQUAL",
                 "direction_label": "같음",
-                "reference_date_available": False,
+                "reference_date_display": "",
+                "reference_date_unavailable": True,
+                "unavailable_reason": "",
+                "microbar": comparison_microbar(Decimal("0.0"), "EQUAL"),
             },
         ],
         "provenance": {
@@ -300,10 +349,20 @@ def _qa_detail_ready_context() -> dict[str, object]:
             "source_date_label": "2026년 8월 29일",
             "coverage_label": "KAMIS 소매 조사 22개 도시 지역 전체 집계",
             "checked_at_iso": "2026-08-30T12:00:00+09:00",
-            "checked_at_label": "2026년 8월 30일 12:00",
+            "checked_at_display": "2026년 8월 30일 12:00",
             "reviewed_at_iso": "2026-08-30T12:30:00+09:00",
             "reviewed_at_label": "2026년 8월 30일 12:30",
             "freshness_state": "stale",
-            "freshness_label": "마지막 검토 자료 · 새 확인 필요",
+            "freshness_label": "마지막 공개 자료 · 최근 확인 필요",
         },
+        "publication": _qa_publication_context(),
+    }
+
+
+def _qa_publication_context() -> dict[str, str]:
+    return {
+        "checked_at_iso": "2026-08-30T12:00:00+09:00",
+        "checked_at_display": "2026년 8월 30일 12:00",
+        "freshness_state": "stale",
+        "freshness_label": "마지막 공개 자료 · 최근 확인 필요",
     }

@@ -33,7 +33,7 @@ def activate_publication() -> tuple[PublicationRevision, RetailPriceSnapshot, An
     )
     publisher.user_permissions.add(permission)
     publisher = type(publisher)._default_manager.get(pk=publisher.pk)
-    revision = seal_recent_publication(decision.id, "ko-v1")
+    revision = seal_recent_publication(decision.id, "ko-v3")
     transition_recent_publication(
         operation_id=uuid.uuid4(),
         actor=publisher,
@@ -58,7 +58,7 @@ def test_catalog_is_unavailable_before_activation_and_candidate_detail_is_hidden
     )
 
     assert catalog_response.status_code == 200
-    assert "공개 조사값 없음" in catalog_response.content.decode()
+    assert "아직 공개된 조사 자료가 없습니다" in catalog_response.content.decode()
     assert "X-Publication-Fact-Set" not in catalog_response
     assert detail_response.status_code == 404
     assert not PublicationChannel.objects.exists()
@@ -80,17 +80,28 @@ def test_catalog_search_and_detail_use_only_the_active_sealed_revision() -> None
     assert search_response.status_code == 200
     assert empty_response.status_code == 200
     assert detail_response.status_code == 200
+    detail_html = " ".join(detail_response.content.decode().split())
     assert catalog_response.headers["X-Publication-Fact-Set"] == revision.typed_fact_set_sha256
     assert detail_response.headers["X-Publication-Fact-Set"] == revision.typed_fact_set_sha256
     assert snapshot.series.item_name in search_response.content.decode()
-    assert "조건에 맞는 항목 없음" in empty_response.content.decode()
-    assert "KAMIS 소매 조사 평균" in detail_response.content.decode()
-    assert "2,000원 낮음" in detail_response.content.decode()
-    assert "(+25.0%)" in detail_response.content.decode()
-    assert "같음" in detail_response.content.decode()
-    assert "source가 비교 기준일을 별도로 제공하지 않음" in detail_response.content.decode()
-    assert "데이터셋 15156063" in detail_response.content.decode()
+    assert "검색 결과가 없습니다" in empty_response.content.decode()
+    assert "KAMIS 소매 조사 평균" in detail_html
+    assert "조사일 평균이 비교값보다 2,000원 낮음 (-20.0%)" in detail_html
+    assert "(+25.0%)" in detail_html
+    assert "같음" in detail_html
+    assert "KAMIS에서 제공하지 않음" in detail_html
+    assert "데이터셋 15156063" in detail_html
     assert "sessionid" not in catalog_response.cookies
+    assert catalog_response.context["publication"]["freshness_label"] == "KAMIS 자료 확인 완료"
+    assert catalog_response.context["results"][0]["week_comparison"]["period_label"] == (
+        "1주 전 제공값"
+    )
+    assert detail_response.context["publication"] == {
+        "checked_at_iso": detail_response.context["provenance"]["checked_at_iso"],
+        "checked_at_display": detail_response.context["provenance"]["checked_at_display"],
+        "freshness_state": "current",
+        "freshness_label": "KAMIS 자료 확인 완료",
+    }
 
 
 @pytest.mark.django_db
@@ -118,9 +129,10 @@ def test_invalid_mobile_search_input_returns_associated_correction_error() -> No
     assert 'role="alert"' in invalid_html
     assert 'aria-invalid="true"' in invalid_html
     assert 'aria-describedby="catalog-query-hint search-error"' in invalid_html
-    assert "검색어는 80자 이하여야 합니다." in invalid_html
+    assert "입력 내용을 확인하세요" in invalid_html
+    assert "품목명은 80자 이하로 입력하세요." in invalid_html
     assert invalid_query not in invalid_html
-    assert "조건에 맞는 항목 없음" not in invalid_html
+    assert "검색 결과가 없습니다" not in invalid_html
     assert corrected_response.status_code == 200
     assert 'aria-invalid="true"' not in corrected_response.content.decode()
 
@@ -143,7 +155,7 @@ def test_category_validation_is_distinct_and_never_reflects_query_or_choice() ->
     assert 'aria-invalid="true"' not in html
     assert query_marker not in html
     assert category_marker not in html
-    assert "조건에 맞는 항목 없음" not in html
+    assert "검색 결과가 없습니다" not in html
 
 
 @pytest.mark.django_db
@@ -191,7 +203,7 @@ def test_confirmation_age_is_separate_and_preserves_last_known_good() -> None:
     assert stale is not None
     assert stale.revision.id == revision.id
     assert stale.freshness_state == "stale"
-    assert "새 확인 필요" in stale.freshness_label
+    assert stale.freshness_label == "마지막 공개 자료 · 최근 확인 필요"
 
 
 @pytest.mark.django_db
@@ -201,20 +213,39 @@ def test_database_failure_uses_fixed_server_error_without_exception_reflection()
         response = Client().get(reverse("grocery:catalog"))
 
     assert response.status_code == 503
-    assert "자료를 표시하지 못함" in response.content.decode()
+    assert "조사 자료를 불러오지 못했습니다" in response.content.decode()
     assert marker not in response.content.decode()
 
 
 @pytest.mark.django_db
 def test_qa_state_routes_are_hard_disabled_unless_local_setting_is_explicit() -> None:
-    disabled = Client().get(reverse("grocery:qa_catalog_state", kwargs={"state": "loading"}))
-    assert disabled.status_code == 404
+    for state in ("loading", "error_400", "error_403", "error_404", "error_500"):
+        disabled = Client().get(reverse("grocery:qa_catalog_state", kwargs={"state": state}))
+        assert disabled.status_code == 404
 
     with override_settings(QA_STATE_PREVIEWS_ENABLED=True):
-        for state in ("loading", "empty", "unavailable", "stale", "server_error"):
+        expected_headings = {
+            "loading": "조사 자료를 불러오고 있습니다",
+            "empty": "검색 결과가 없습니다",
+            "unavailable": "아직 공개된 조사 자료가 없습니다",
+            "stale": "마지막 공개 자료를 표시합니다",
+            "server_error": "조사 자료를 불러오지 못했습니다",
+        }
+        for state, heading in expected_headings.items():
             response = Client().get(reverse("grocery:qa_catalog_state", kwargs={"state": state}))
             assert response.status_code == (503 if state == "server_error" else 200)
-            assert "로컬 화면 상태 검수용 미리보기" in response.content.decode()
+            assert heading in response.content.decode()
+
+        error_previews = {
+            "error_400": (400, "요청 내용을 확인하세요"),
+            "error_403": (403, "이 페이지를 볼 수 없습니다"),
+            "error_404": (404, "페이지를 찾을 수 없습니다"),
+            "error_500": (500, "페이지를 표시하지 못했습니다"),
+        }
+        for state, (status, heading) in error_previews.items():
+            response = Client().get(reverse("grocery:qa_catalog_state", kwargs={"state": state}))
+            assert response.status_code == status
+            assert f'<h1 id="error-heading">{heading}</h1>' in response.content.decode()
 
 
 @pytest.mark.django_db

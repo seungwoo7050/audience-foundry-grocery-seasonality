@@ -2,43 +2,42 @@
   <section class="state-notice state-notice--info" role="status" aria-live="polite" aria-atomic="true">
     <span class="state-notice__symbol" aria-hidden="true">…</span>
     <div>
-      <h2 class="state-notice__title">자료를 불러오는 중</h2>
-      <p>{{ state_message|default:"검토되어 공개된 조사값을 확인하고 있습니다." }}</p>
+      <h2 class="state-notice__title">조사 자료를 불러오고 있습니다</h2>
+      <p>공개된 자료를 확인하는 동안 잠시 기다려 주세요.</p>
     </div>
   </section>
 {% elif state == "empty" %}
   <section class="state-notice state-notice--neutral" role="status">
     <span class="state-notice__symbol" aria-hidden="true">○</span>
     <div>
-      <h2 class="state-notice__title">조건에 맞는 항목 없음</h2>
-      <p>{{ state_message|default:"검색어를 줄이거나 다른 부류를 선택해 보세요." }}</p>
+      <h2 class="state-notice__title">검색 결과가 없습니다</h2>
+      <p>품목명을 바꾸거나 다른 부류를 선택하세요.</p>
+      <a class="button button--secondary" href="{{ recovery_url|default:'/' }}">전체 항목 보기</a>
     </div>
   </section>
 {% elif state == "unavailable" %}
   <section class="state-notice state-notice--warning" role="status">
     <span class="state-notice__symbol" aria-hidden="true">!</span>
     <div>
-      <h2 class="state-notice__title">공개 조사값 없음</h2>
-      <p>{{ state_message|default:"현재 공개할 수 있는 검토 완료 자료가 없습니다." }}</p>
+      <h2 class="state-notice__title">아직 공개된 조사 자료가 없습니다</h2>
+      <p>검토를 마친 자료가 공개되면 이곳에 표시됩니다.</p>
     </div>
   </section>
 {% elif state == "stale" %}
   <section class="state-notice state-notice--warning" role="status">
     <span class="state-notice__symbol" aria-hidden="true">!</span>
     <div>
-      <h2 class="state-notice__title">마지막 검토 자료 표시 중</h2>
-      <p>
-        {{ state_message|default:"새 수집 상태를 확인하고 있습니다. 아래에는 마지막으로 검토해 공개한 조사값을 표시합니다." }}
-      </p>
+      <h2 class="state-notice__title">마지막 공개 자료를 표시합니다</h2>
+      <p>최근 자료 확인이 필요합니다. 마지막으로 검토를 마친 조사값을 표시합니다.</p>
     </div>
   </section>
 {% elif state == "server_error" %}
   <section class="state-notice state-notice--error" role="alert">
     <span class="state-notice__symbol" aria-hidden="true">×</span>
     <div>
-      <h2 class="state-notice__title">자료를 표시하지 못함</h2>
-      <p>{{ state_message|default:"잠시 후 다시 시도해 주세요." }}</p>
-      {% if retry_url %}<a class="button button--secondary" href="{{ retry_url }}">다시 시도</a>{% endif %}
+      <h2 class="state-notice__title">조사 자료를 불러오지 못했습니다</h2>
+      <p>잠시 후 다시 불러오세요.</p>
+      {% if retry_url %}<a class="button button--secondary" href="{{ retry_url }}">다시 불러오기</a>{% endif %}
     </div>
   </section>
 {% endif %}

@@ -332,3 +332,31 @@ artifact에 남기지 않았고 고정 count receipt만 출력했다. 이 결과
 persistence·SSR 연결의 실제 smoke evidence다. 동적으로 파생한 test mapping과 자동 approval은
 사람의 cross-source identity·권리·전체 coverage 검수, production publication·activation,
 scheduler·traffic 검증을 대신하지 않는다.
+
+## 6. Frontend redesign v2 실제 자료 browser evidence
+
+Frontend redesign v2는 `27bb0cc3e9c65309c567fb6b4e08ad8b989907a6`에서 시작했다. browser
+evidence 대상 frontend commit은 `d97888885e8a2e5b8db88005ddf0bf3a336dcdc6`, evidence commit은
+`db906b4`다. 이 절을 포함한 최종 local `main` SHA는 문서가 자기 commit을 참조할 수 없으므로
+완료 응답에서 고정한다.
+
+명시적 opt-in 실행에서 실제 네 KAMIS 공공 API 응답을 normal adapter와 typed persistence에
+통과시키고, disposable PostgreSQL에서 test-only mapping·review·seal·activation으로 local active
+test publication을 만들었다. recent 10행, monthly 36행, regional 1행, market 9행을 정규화했고
+command 단계의 catalog·detail·history·regions·markets 5개 SSR route는 source 재호출 0,
+raw response 보존 없음으로 통과했다. browser ready 화면의 가격값은 synthetic fixture가 아니라
+이 local active test publication에서 읽은 실제 API 기반 정규화 값이다.
+
+[Frontend redesign v2 browser evidence](../output/playwright/vnext-redesign-v2/README.md)는
+`390×844`와 `1440×900`의 catalog·detail·history·regions·markets·selection 6개 소비자 surface,
+`360×800`과 `768×1024`의 overflow 0, mobile 첫 catalog record의 fold 안 노출, client script와
+외부 request 0을 고정한다. local axe-core 4.13.0은 ready 6면, validation 400, catalog 503,
+generic 404의 9면에서 WCAG 2/2.1/2.2 A·AA violation 0과 unexpected incomplete 0을 확인했다.
+
+따라서 application code, local 실제 자료 흐름과 browser 인수 범위에서는 배포 직전 candidate다.
+그러나 자동 mapping·approval과 representative historical scope는 첫 catalog 품목과 한 지역에
+한정되며, 사람이 검토한 full-catalog production publication이 아니다. production platform·DB·
+secret·domain·DNS, 전체 cross-source mapping·권리·coverage 검수, production review·seal·activation,
+historical monitor·authoritative inspection·backup, traffic switch와 rollback은 사람 checkpoint로
+남는다. §4의 source API와 `.env.local` 미접근 기록은 최초 합성 검증 시점의 사실이며, §5와 이 절은
+그 뒤 소유자가 승인한 별도 opt-in live 실행 결과다.

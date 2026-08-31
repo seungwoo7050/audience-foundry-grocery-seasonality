@@ -72,9 +72,13 @@ current/week/month/year 계약을 검증했습니다. 정확한 reference date�
 vNext 개발계정의 최소 live gate는 공식 API `15156060`, `15156062`, `15156065`의 HTTPS 접근,
 non-empty 소매 응답과 exact wrapper·field/type schema를 확인했습니다. 이는 전체 pagination,
 모든 series의 cross-source identity, 36·60개월 completeness, production schedule·권리 판정 또는
-첫 publication 승인이 아닙니다. 현재 구현의 browser evidence는 disposable PostgreSQL의 합성
-fixture를 사용하며 live historical coverage로 해석하지 않습니다. 자세한 경계는
-[vNext source gate](docs/VNEXT-SOURCE-GATE.md)에 있습니다.
+첫 publication 승인이 아닙니다. 기존 [vNext browser evidence](output/playwright/vnext/README.md)는
+disposable PostgreSQL의 합성 fixture를 사용합니다. 별도의
+[frontend redesign v2 evidence](output/playwright/vnext-redesign-v2/README.md)는 실제 네 KAMIS API
+응답을 normal adapter와 typed persistence에 통과시키고 local active test publication으로 만든 뒤
+같은 public-read SSR을 검증했습니다. 후자는 synthetic price fixture가 아니지만 자동 mapping·
+approval과 대표 historical 범위를 사용하므로 live full coverage나 production publication 증거는
+아닙니다. 자세한 경계는 [vNext source gate](docs/VNEXT-SOURCE-GATE.md)에 있습니다.
 
 ## local 실행
 

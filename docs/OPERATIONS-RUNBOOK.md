@@ -488,6 +488,36 @@ publication·activation을 대신하지 않는다. 따라서 일반 `make check`
 배포 또는 production worker에 자동 연결하지 않는다. 실패는 key·provider·schema·adapter 경계의
 live evidence로 기록하고 fixture 성공으로 덮지 않는다.
 
+### browser acceptance용 live fixture (상태 보존형)
+
+`build_live_source_browser_fixture`는 위 rollback smoke와 별개의 수동 검증 command다. 실제 API
+기반 정규화 값을 browser server가 반복해서 읽을 수 있도록 local test publication을 database에
+의도적으로 commit하며 자동 rollback이나 database 삭제를 하지 않는다. 다음 조건을 모두 갖춘
+통제된 local harness에서만 `LIVE_SOURCE_BROWSER_FIXTURE=1`을 주입해 실행한다.
+
+- `DEBUG=True`, Admin·QA preview·production control plane 비활성
+- `127.0.0.1:55434`의 loopback PostgreSQL과 `grocery_vnext_live_`로 시작하는 새 exact DB 이름
+- migration 적용 뒤 source·publication·audit, User와 Group root가 모두 비어 있는 DB
+- ambient `KAMIS_API_KEY` 부재와 ignored owner-only `.env.local`을 process 안에서만 읽는 loader
+
+operator는 자신이 만든 exact DB identity를 먼저 고정하고 create → migrate → fixture command →
+query를 남기지 않는 local Gunicorn access-log 설정 → browser acceptance 순서로 진행한다. 종료할
+때는 browser와 server process를 먼저 닫고 자신이 만든 exact DB만 삭제한 뒤 PostgreSQL catalog에서
+그 이름이 사라졌는지 별도로 확인한다. 다른 database, container나 volume은 정리 대상으로 넓히지
+않는다. fixture가 중간에 실패해도 자동 삭제를 가정하지 않고 같은 exact cleanup 절차를 따른다.
+
+command의 성공 receipt는 row·route count, SSR source-call count와 raw-response-retention 여부만
+출력한다. source credential의 값·길이·일부·encoding, URL query, source row와 원응답은 command
+argument, access log, receipt 또는 evidence에 기록하지 않는다. 2026-08-31(KST) 승인 실행은 recent
+10행, monthly 36행, regional 1행, market 9행과 command 내부 SSR 5 route를 통과했으며 SSR source
+call은 0, raw response 보존은 없었다. provider count는 고정 fixture나 full historical coverage
+계약이 아니다.
+
+[Frontend redesign v2 browser evidence](../output/playwright/vnext-redesign-v2/README.md)는 이
+상태 보존형 fixture의 local active test publication으로 생성했다. 이 command와 evidence를 CI,
+일반 `make check`, `make production-check`, 배포 또는 production worker에 연결하지 않는다.
+test-only 자동 mapping·review·seal·activation은 production 사람 checkpoint를 대체하지 않는다.
+
 ## 수집부터 공개까지
 
 ### 역할 분리와 자동화 한계

@@ -29,7 +29,7 @@ SECURITY_HEADERS: Final[dict[str, str]] = {
     "Permissions-Policy": "camera=(), geolocation=(), microphone=(), payment=()",
     "Cross-Origin-Opener-Policy": "same-origin",
     "Cross-Origin-Resource-Policy": "same-origin",
-    "Referrer-Policy": "same-origin",
+    "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
 }

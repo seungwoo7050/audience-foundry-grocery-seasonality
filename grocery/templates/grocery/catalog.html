@@ -18,7 +18,9 @@
       <h2 id="catalog-search-heading">품목 찾기</h2>
     </div>
 
-    {% if query_error or category_error %}
+    {% if validation_errors %}
+      {% include "grocery/_form_errors.html" with validation_errors=validation_errors %}
+    {% elif query_error or category_error %}
       <div id="search-error" class="form-error" role="alert">
         <span class="form-error__symbol" aria-hidden="true">!</span>
         <div class="form-error__content">
@@ -79,7 +81,7 @@
     </form>
 
     {% if period_options and direction_options and sort_options %}
-      <details class="catalog-options"{% if filters_open %} open{% endif %}>
+      <details class="catalog-options"{% if filters_open or period_error or direction_error or sort_error %} open{% endif %}>
         <summary>
           <span>비교·정렬 기준</span>
           <span class="catalog-options__current">
@@ -91,7 +93,11 @@
           {% if selected_category %}<input type="hidden" name="category" value="{{ selected_category }}">{% endif %}
           <div class="field-group">
             <label for="catalog-period">비교 기간</label>
-            <select id="catalog-period" name="period">
+            <select
+              id="catalog-period"
+              name="period"
+              {% if period_error %}aria-invalid="true" aria-describedby="validation-title"{% endif %}
+            >
               {% for option in period_options %}
                 <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
               {% endfor %}
@@ -99,7 +105,11 @@
           </div>
           <div class="field-group">
             <label for="catalog-direction">변화 방향</label>
-            <select id="catalog-direction" name="direction">
+            <select
+              id="catalog-direction"
+              name="direction"
+              {% if direction_error %}aria-invalid="true" aria-describedby="validation-title"{% endif %}
+            >
               {% for option in direction_options %}
                 <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
               {% endfor %}
@@ -107,7 +117,11 @@
           </div>
           <div class="field-group">
             <label for="catalog-sort">표시 순서</label>
-            <select id="catalog-sort" name="sort">
+            <select
+              id="catalog-sort"
+              name="sort"
+              {% if sort_error %}aria-invalid="true" aria-describedby="validation-title"{% endif %}
+            >
               {% for option in sort_options %}
                 <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
               {% endfor %}
@@ -154,20 +168,27 @@
                 {% for item in group.list %}
                   <li class="ledger-row">
                     <article class="ledger-entry">
-                      <header class="ledger-entry__heading">
-                        <h4>
-                          <a
-                            class="ledger-entry__link"
-                            href="{{ item.url }}"
-                            aria-label="{{ item.item_name }} 상세 보기"
-                          >{{ item.item_name }}</a>
-                        </h4>
-                        <p class="ledger-entry__identity">
-                          <span>품종 {{ item.variety_name }}</span>
-                          <span>등급 {{ item.grade_name }}</span>
-                          <span>판매 단위 {{ item.unit_label }}</span>
-                        </p>
-                      </header>
+                      <div class="ledger-entry__top">
+                        <header class="ledger-entry__heading">
+                          <h4>
+                            <a
+                              class="ledger-entry__link"
+                              href="{{ item.url }}"
+                              aria-label="{{ item.item_name }} 상세 보기"
+                            >{{ item.item_name }}</a>
+                          </h4>
+                          <p class="ledger-entry__identity">
+                            <span>품종 {{ item.variety_name }}</span>
+                            <span>등급 {{ item.grade_name }}</span>
+                            <span>판매 단위 {{ item.unit_label }}</span>
+                          </p>
+                        </header>
+
+                        <div class="ledger-entry__actions">
+                          {% if item.selection_url %}<a href="{{ item.selection_url }}">선택</a>{% endif %}
+                          <span class="ledger-entry__action" aria-hidden="true">→</span>
+                        </div>
+                      </div>
 
                       <dl class="ledger-fact ledger-fact--price">
                         <dt>조사일 평균</dt>
@@ -194,10 +215,6 @@
                         </dd>
                       </dl>
 
-                      <div class="ledger-entry__actions">
-                        {% if item.selection_url %}<a href="{{ item.selection_url }}">선택</a>{% endif %}
-                        <span class="ledger-entry__action" aria-hidden="true">→</span>
-                      </div>
                     </article>
                   </li>
                 {% endfor %}

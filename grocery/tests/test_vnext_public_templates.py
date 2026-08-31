@@ -1,5 +1,7 @@
 from django.template.loader import render_to_string
 
+from grocery.tests.test_public_templates import catalog_context
+
 SERIES = {
     "item_name": "배추",
     "category_label": "채소류",
@@ -140,3 +142,43 @@ def test_historical_blocking_states_hide_controls_and_fact_ledgers() -> None:
         assert "아직 공개된 조사 자료가 없습니다" in html
         assert 'class="scope-form' not in html
         assert "-ledger" not in html
+
+
+def test_catalog_validation_reveals_and_associates_advanced_controls() -> None:
+    context = catalog_context(
+        catalog_state="validation",
+        validation_errors=[
+            {"message": "비교 기간을 확인하세요.", "target": "catalog-period"},
+            {"message": "변화 방향을 확인하세요.", "target": "catalog-direction"},
+            {"message": "표시 순서를 확인하세요.", "target": "catalog-sort"},
+        ],
+        period_options=[{"value": "week", "label": "1주 비교", "selected": True}],
+        direction_options=[{"value": "all", "label": "전체", "selected": True}],
+        sort_options=[{"value": "name", "label": "품목명 순", "selected": True}],
+        period_error=True,
+        direction_error=True,
+        sort_error=True,
+    )
+
+    html = render_to_string("grocery/catalog.html", context)
+
+    assert '<div class="form-error" role="alert" aria-labelledby="validation-title">' in html
+    assert '<details class="catalog-options" open>' in html
+    for target in ("catalog-period", "catalog-direction", "catalog-sort"):
+        assert f'href="#{target}"' in html
+        control = html[html.index(f'id="{target}"') :]
+        assert 'aria-invalid="true"' in control.split(">", 1)[0]
+        assert 'aria-describedby="validation-title"' in control.split(">", 1)[0]
+
+
+def test_catalog_keeps_selection_action_in_the_compact_identity_row() -> None:
+    context = catalog_context()
+    context["results"][0]["selection_url"] = "/selection/?series=first"
+
+    html = render_to_string("grocery/catalog.html", context)
+
+    top_start = html.index('<div class="ledger-entry__top">')
+    top_end = html.index("</div>", html.index('class="ledger-entry__actions"', top_start))
+    top_html = html[top_start:top_end]
+    assert 'class="ledger-entry__heading"' in top_html
+    assert 'href="/selection/?series=first"' in top_html

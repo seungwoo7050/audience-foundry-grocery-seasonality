@@ -12,6 +12,7 @@ from grocery.historical_collection_models import (
     HistoricalSourceCollection,
     HistoricalSourceCollectionPart,
 )
+from grocery.historical_collections import partition_manifest_sha256
 from grocery.historical_daily_models import DailyMarketRetailPrice, DailyRegionalRetailPrice
 from grocery.historical_identity_models import (
     HistoricalRetailSeriesKey,
@@ -50,6 +51,7 @@ def _collection_part(
     publication_mode: str,
     parser_revision: str,
     fact_count: int,
+    code_manifest_sha256: str = "a" * 64,
     month_min: str = "",
     month_max: str = "",
     date_min: date | None = None,
@@ -76,8 +78,8 @@ def _collection_part(
     collection = HistoricalSourceCollection.objects.create(
         kind=kind,
         source_configuration=source,
-        code_manifest_sha256="a" * 64,
-        partition_manifest_sha256=digest,
+        code_manifest_sha256=code_manifest_sha256,
+        partition_manifest_sha256=partition_manifest_sha256([digest]),
         expected_part_count=1,
         month_min=month_min,
         month_max=month_max,

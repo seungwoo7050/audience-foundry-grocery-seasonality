@@ -35,7 +35,7 @@ class StaticDeliverySettingsTests(SimpleTestCase):
             "grocery/app.css",
             "grocery/brand-mark.svg",
             "grocery/favicon.svg",
-            "grocery/fonts/gowun-batang-bold.woff2",
+            "grocery/fonts/hahmlet-bold.woff2",
         ):
             with self.subTest(asset=asset):
                 self.assertIsNotNone(finders.find(asset))
@@ -43,30 +43,30 @@ class StaticDeliverySettingsTests(SimpleTestCase):
         css = Path(settings.BASE_DIR, "grocery", "static", "grocery", "app.css").read_text(
             encoding="utf-8"
         )
-        self.assertIn('url("fonts/gowun-batang-bold.woff2")', css)
+        self.assertIn('url("fonts/hahmlet-bold.woff2")', css)
         self.assertNotIn("@import", css)
         self.assertNotIn("http://", css)
         self.assertNotIn("https://", css)
 
     def test_self_hosted_heading_font_matches_pinned_upstream_provenance(self) -> None:
         base_dir = Path(settings.BASE_DIR)
-        font_path = base_dir / "grocery/static/grocery/fonts/gowun-batang-bold.woff2"
-        license_path = base_dir / "LICENSES/GowunBatang-OFL-1.1.txt"
+        font_path = base_dir / "grocery/static/grocery/fonts/hahmlet-bold.woff2"
+        license_path = base_dir / "LICENSES/Hahmlet-OFL-1.1.txt"
         notices_path = base_dir / "THIRD_PARTY_NOTICES.md"
 
         self.assertEqual(
             hashlib.sha256(font_path.read_bytes()).hexdigest(),
-            "7f3c6eff348d1e8034bbd9b4cf177e887c4a8a58b59035cfee0b1ed464d54a70",
+            "9a5ab61f43a689167d0dea3046003bc3a897f32ab3af7c437add32075c15c948",
         )
         license_text = license_path.read_text(encoding="utf-8")
         self.assertIn(
-            "Copyright 2021 The Gowun Batang Project Authors",
+            "Copyright 2020 The Hahmlet Project Authors",
             license_text,
         )
         self.assertIn("SIL OPEN FONT LICENSE Version 1.1", license_text)
         notices = notices_path.read_text(encoding="utf-8")
-        self.assertIn("4e73f5a9a004927220354f4b68a4c720da538147", notices)
-        self.assertIn("LICENSES/GowunBatang-OFL-1.1.txt", notices)
+        self.assertIn("f9c5dac25d88015e9f0953253cec1a71854b7d24", notices)
+        self.assertIn("LICENSES/Hahmlet-OFL-1.1.txt", notices)
 
     def test_public_frontend_contains_no_raster_photo_assets(self) -> None:
         static_root = Path(settings.BASE_DIR, "grocery", "static", "grocery")

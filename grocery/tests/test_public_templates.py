@@ -390,7 +390,7 @@ def test_styles_define_ledger_tokens_responsive_interaction_and_user_preferences
     )
 
     assert "@font-face" in css
-    assert 'url("fonts/gowun-batang-bold.woff2")' in css
+    assert 'url("fonts/hahmlet-bold.woff2")' in css
     assert "--page-width: 72rem" in css
     assert "box-sizing: border-box" in css
     assert "min-width: 0" in css

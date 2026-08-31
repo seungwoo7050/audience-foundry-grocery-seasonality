@@ -1,6 +1,6 @@
 @font-face {
-  font-family: "Gowun Batang";
-  src: url("fonts/gowun-batang-bold.woff2") format("woff2");
+  font-family: "Hahmlet";
+  src: url("fonts/hahmlet-bold.woff2") format("woff2");
   font-style: normal;
   font-weight: 700;
   font-display: swap;
@@ -125,7 +125,7 @@ dd {
 
 h1,
 .brand__name {
-  font-family: "Gowun Batang", serif;
+  font-family: "Hahmlet", serif;
   font-weight: 700;
   line-height: 1.18;
   text-wrap: balance;
@@ -144,7 +144,7 @@ h1 {
   max-width: 20ch;
   margin-bottom: var(--space-4);
   font-size: clamp(2.25rem, 8vw, 4.75rem);
-  letter-spacing: -0.055em;
+  letter-spacing: -0.04em;
 }
 
 h2 {
@@ -158,10 +158,10 @@ h2 {
 .region-section__intro h2,
 .market-section > .section-heading h2,
 .selection-section__heading h2 {
-  font-family: "Gowun Batang", serif;
+  font-family: "Hahmlet", serif;
   font-size: clamp(1.55rem, 4.2vw, 2.35rem);
   font-weight: 700;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.025em;
   line-height: 1.18;
 }
 
@@ -269,7 +269,7 @@ h4 {
 
 .brand__name {
   font-size: 1.34rem;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.03em;
 }
 
 .brand__description {

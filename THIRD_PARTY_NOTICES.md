@@ -18,7 +18,7 @@ digest를 함께 고정한다. 이 고지는 각 upstream license 원문을 대�
 | tzdata | `2026.3` | Windows 조건부 timezone data | `github.com/python/tzdata` | Apache-2.0 |
 | PostgreSQL official image | `18.6` | local DB·migration·restore rehearsal | `docker.io/library/postgres` | PostgreSQL License 및 image 내 고지 |
 | uv | `0.12.6` | Python·dependency·lock 실행 도구 | `github.com/astral-sh/uv` | Apache-2.0 OR MIT |
-| Gowun Batang Bold | upstream commit `4e73f5a9a004927220354f4b68a4c720da538147` | wordmark·큰 제목의 self-hosted webfont | `github.com/yangheeryu/Gowun-Batang` | SIL Open Font License 1.1 |
+| Hahmlet Bold | upstream commit `f9c5dac25d88015e9f0953253cec1a71854b7d24` | wordmark·큰 제목의 self-hosted webfont | `github.com/hyper-type/hahmlet` | SIL Open Font License 1.1 |
 
 개발·검증 환경에는 다음 직접 도구를 사용한다. 이들은 production dependency group에
 포함되지 않는다.
@@ -36,7 +36,6 @@ digest를 함께 고정한다. 이 고지는 각 upstream license 원문을 대�
 | @playwright/cli | `0.1.18` | 실제 Chromium browser E2E·screenshot 검증 | Apache-2.0 |
 | Chromium | `152.0.7977.8` | Playwright가 관리하는 browser 검증 runtime | BSD-style 및 bundled component 고지 |
 | @axe-core/cli | `4.13.0` | 렌더링된 page의 WCAG A·AA 자동 검사 | MPL-2.0 및 bundled third-party 고지 |
-| FontTools | `4.63.0` | Gowun Batang TTF의 WOFF2 일회성 변환 | MIT |
 
 PostgreSQL image index digest는
 `sha256:4ef4dbc939d61acea57712655ddb4b4ab27419c913f94cca0cd57cb3ea3c2280`다.
@@ -50,10 +49,8 @@ Playwright·Chromium·axe-core는 `uv.lock`이나 production artifact에 포함�
 assurance 도구다. browser evidence를 재생성하는 환경은 각 배포물의 upstream license와
 bundled notice를 함께 보존한다.
 
-Gowun Batang Bold는 위 upstream commit의 `fonts/ttf/GowunBatang-Bold.ttf`
-(SHA-256 `dbfcaa646e5831e7478524924f02906f550285a5050699b4e38c9950b3ec4b94`)를
-glyph subset 없이 WOFF2로 변환해
-`grocery/static/grocery/fonts/gowun-batang-bold.woff2`에 포함한다. 배포 WOFF2 SHA-256은
-`7f3c6eff348d1e8034bbd9b4cf177e887c4a8a58b59035cfee0b1ed464d54a70`이며, upstream의
-완전한 license 원문은 `LICENSES/GowunBatang-OFL-1.1.txt`에 보존한다. 원격 font service나
-CDN은 사용하지 않는다.
+Hahmlet Bold는 위 upstream commit의 `fonts/webfonts/Hahmlet-Bold.woff2`를 수정하거나 glyph
+subset하지 않고 `grocery/static/grocery/fonts/hahmlet-bold.woff2`에 포함한다. 배포 WOFF2
+SHA-256은 `9a5ab61f43a689167d0dea3046003bc3a897f32ab3af7c437add32075c15c948`이며,
+upstream의 완전한 license 원문은 `LICENSES/Hahmlet-OFL-1.1.txt`에 보존한다. 원격 font
+service나 CDN은 사용하지 않는다.

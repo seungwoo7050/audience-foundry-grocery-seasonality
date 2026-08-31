@@ -1,0 +1,85 @@
+{% extends "grocery/base.html" %}
+
+{% block title %}{{ series.item_name|default:"품목" }} 지역별 조사값 | 초록장부{% endblock %}
+
+{% block content %}
+  {% include "grocery/_historical_header.html" with page_eyebrow="지역별 소매 조사값" page_summary="같은 조사일과 품목 조건에서 KAMIS가 제공한 지역별 평균과 조사 범위를 살펴봅니다." %}
+
+  {% if regions_state == "loading" or regions_state == "unavailable" or regions_state == "server_error" %}
+    {% include "grocery/_state_notice.html" with state=regions_state retry_url=retry_url %}
+  {% else %}
+    {% if regions_state == "validation" %}
+      {% include "grocery/_form_errors.html" with validation_errors=validation_errors %}
+    {% elif regions_state == "stale" %}
+      {% include "grocery/_state_notice.html" with state="stale" %}
+    {% endif %}
+
+    {% include "grocery/_publication_summary.html" with publication=historical_publication publication_label="지역별 공개 자료 정보" %}
+
+    <section class="scope-controls scope-controls--compact" aria-labelledby="regions-date-heading">
+      <div class="scope-controls__heading">
+        <h2 id="regions-date-heading">조사일</h2>
+        <p>지역과 시장 자료가 함께 확인된 실제 조사일만 선택할 수 있습니다.</p>
+      </div>
+      <form class="scope-form scope-form--date" action="{{ regions_form_action|default:'' }}" method="get">
+        <div class="field-group">
+          <label for="regions-date">조사일 선택</label>
+          <select id="regions-date" name="date"{% if date_error %} aria-invalid="true"{% endif %}>
+            {% for option in date_options %}
+              <option value="{{ option.value }}"{% if option.selected %} selected{% endif %}>{{ option.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <button class="button button--primary" type="submit">조사일 적용</button>
+      </form>
+    </section>
+
+    {% if regions_state == "validation" %}
+    {% elif regional_rows %}
+      <section class="region-section" aria-labelledby="regions-heading">
+        <div class="section-heading section-heading--stacked">
+          <p class="eyebrow">{{ selected_date.label }}</p>
+          <h2 id="regions-heading">지역별 조사 범위</h2>
+          <p>지역은 KAMIS 공식 지역명 순서로 표시합니다. 선의 양 끝은 최저·최고, 점은 평균입니다.</p>
+        </div>
+
+        <div class="region-ledger">
+          <div class="region-ledger__head" aria-hidden="true">
+            <span>지역</span><span>소매 조사 평균</span><span>최저·최고 조사 범위</span><span>시장 조사값</span>
+          </div>
+          <ul class="region-list">
+            {% for row in regional_rows %}
+              <li class="region-row">
+                <h3>{{ row.region_label }}</h3>
+                <dl class="region-row__average">
+                  <dt>소매 조사 평균</dt>
+                  <dd><data value="{{ row.mean_machine }}">{{ row.mean_label }}</data></dd>
+                </dl>
+                <div class="region-row__range">
+                  <dl>
+                    <div><dt>최저 조사값</dt><dd>{{ row.minimum_label }}</dd></div>
+                    <div><dt>최고 조사값</dt><dd>{{ row.maximum_label }}</dd></div>
+                  </dl>
+                  {% if row.meter %}
+                    <svg class="range-meter" viewBox="0 0 100 8" aria-hidden="true" focusable="false">
+                      <line class="range-meter__rail" x1="0" y1="4" x2="100" y2="4"/>
+                      <line class="range-meter__span" x1="{{ row.meter.minimum_x }}" y1="4" x2="{{ row.meter.maximum_x }}" y2="4"/>
+                      <circle class="range-meter__point" cx="{{ row.meter.mean_x }}" cy="4" r="2.5"/>
+                    </svg>
+                  {% endif %}
+                </div>
+                <div class="region-row__action">
+                  {% if row.markets_url %}<a href="{{ row.markets_url }}">시장별 값 보기 <span aria-hidden="true">→</span></a>{% else %}<span class="status-text status-text--unavailable">시장 조사값 없음</span>{% endif %}
+                </div>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      </section>
+    {% else %}
+      {% include "grocery/_state_notice.html" with state="server_error" retry_url=retry_url %}
+    {% endif %}
+  {% endif %}
+{% endblock %}
+
+{% block footer_note %}표시값은 KAMIS가 제공한 지역별 소매 조사 평균·최저·최고입니다. 개별 판매처의 실제 판매 금액과 다를 수 있습니다.{% endblock %}

@@ -2705,5 +2705,6 @@ def build_source_artifact(attempt_id: uuid.UUID) -> tuple[SourceArtifact, bool]:
 
 # Load separately bounded vNext models into Django's app registry.
 from grocery import historical_collection_models as _historical_collection_models  # noqa: E402,F401
+from grocery import historical_daily_models as _historical_daily_models  # noqa: E402,F401
 from grocery import historical_identity_models as _historical_identity_models  # noqa: E402,F401
 from grocery import historical_monthly_models as _historical_monthly_models  # noqa: E402,F401

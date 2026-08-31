@@ -13,16 +13,19 @@
 | 기본 브랜치 | `main` |
 | remote | `origin` (`https://github.com/seungwoo7050/audience-foundry-grocery-seasonality.git`) |
 | 공개 상태 | GitHub 공개 저장소·production service 미배포 |
-| 현재 구현 기준선 | `bb0b28038243c539db2eafcfebc05144d9d59d66` |
-| 구현 상태 | Phase 0와 production-grade SSR redesign 완료; vNext source gate 승인 전 |
+| vNext 시작 기준선 | `bb0b28038243c539db2eafcfebc05144d9d59d66` |
+| 구현 상태 | vNext local implementation candidate; production migration·publication·deploy 미실행 |
 
 legacy 코드, 경쟁 서비스 이력, 비공식 가격 dump, KAMIS HTML과 다른 Audience Foundry
 제품의 구현을 가져오지 않습니다. 재사용은 exact source·license·revision·검증·rollback을
 별도 결정으로 승인한 뒤에만 가능합니다.
 
-위 상태는 2026-08-31(KST)에 제품 소유자가 원격 연결과 공개 저장소 반영을 승인한 뒤
-`main == origin/main`, clean working tree와 GitHub repository visibility를 재검증한 결과입니다.
-production 배포·database·publication activation·traffic 공개를 뜻하지 않습니다.
+위 remote 공개 상태와 시작 기준선은 2026-08-31(KST)에 제품 소유자가 원격 연결과 공개
+저장소 반영을 승인한 뒤 `main == origin/main`, clean working tree와 GitHub repository
+visibility를 재검증한 당시 사실입니다. 이후 vNext candidate는 local에서만 만들었고
+`origin`을 변경하지 않았습니다. 현재 exact local SHA·branch·clean 상태는 완료 보고서가
+고정하며, 어떤 상태도 production 배포·database migration·publication activation·traffic
+공개를 뜻하지 않습니다.
 
 ## 변경할 수 없는 MVP 결정
 

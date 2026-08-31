@@ -15,11 +15,15 @@ from grocery.historical_collection_models import (
     HistoricalSourceCollection,
     HistoricalSourceCollectionPart,
 )
-from grocery.historical_identity_models import HistoricalRetailSeriesKey, RetailRegionKey
+from grocery.historical_identity_models import (
+    HistoricalRetailSeriesKey,
+    RetailMarketKey,
+    RetailRegionKey,
+)
 from grocery.models import FetchAttempt, ParseRun, PriceSeriesKey, SourceArtifact
 from grocery.source.historical_client import PreparedHistoricalRequest
 from grocery.source.historical_contract import HistoricalDataset
-from grocery.source.historical_dimensions import RegionObservation
+from grocery.source.historical_dimensions import MarketObservation, RegionObservation
 from grocery.source.kamis import IdentityObservation
 
 
@@ -164,3 +168,13 @@ def resolve_historical_region(observation: RegionObservation) -> RetailRegionKey
     if region.region_name != observation.name:
         raise ValidationError("Historical row region name drifted from reviewed evidence.")
     return region
+
+
+def resolve_historical_market(
+    region: RetailRegionKey,
+    observation: MarketObservation,
+) -> RetailMarketKey:
+    market = RetailMarketKey.objects.get(region=region, market_code=observation.code)
+    if market.market_name != observation.name:
+        raise ValidationError("Historical row market name drifted from reviewed evidence.")
+    return market

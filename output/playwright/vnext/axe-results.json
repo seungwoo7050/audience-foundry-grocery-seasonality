@@ -1,0 +1,48 @@
+{
+  "axe_core_file_sha256": "c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1",
+  "axe_core_version": "4.13.0",
+  "candidate_sha": "cb0d4264ceee434fd66ff230cac0c29fe28308a2",
+  "generated_at": "2026-08-31T06:25:05Z",
+  "passed": true,
+  "scan_count": 7,
+  "scans": [
+    {
+      "name": "catalog-ready",
+      "passes": 23,
+      "reviewed_contrast_nodes": 7
+    },
+    {
+      "name": "detail-ready",
+      "passes": 21,
+      "reviewed_contrast_nodes": 3
+    },
+    {
+      "name": "history-ready",
+      "passes": 25,
+      "reviewed_contrast_nodes": 7
+    },
+    {
+      "name": "regions-ready",
+      "passes": 25,
+      "reviewed_contrast_nodes": 2
+    },
+    {
+      "name": "markets-ready",
+      "passes": 25,
+      "reviewed_contrast_nodes": 1
+    },
+    {
+      "name": "selection-ready",
+      "passes": 25,
+      "reviewed_contrast_nodes": 3
+    },
+    {
+      "name": "catalog-validation",
+      "passes": 27,
+      "reviewed_contrast_nodes": 1
+    }
+  ],
+  "unexpected_incomplete_count": 0,
+  "violation_count": 0,
+  "viewport": "390x844"
+}

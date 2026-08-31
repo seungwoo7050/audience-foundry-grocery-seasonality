@@ -1,0 +1,27 @@
+{
+  "candidate_sha": "cb0d4264ceee434fd66ff230cac0c29fe28308a2",
+  "chrome_version": "151.0.7922.174",
+  "external_requests": 0,
+  "generated_at": "2026-08-31T06:25:05Z",
+  "output_directory": "output/playwright/vnext",
+  "overflow_only_viewports": [
+    "360x800",
+    "768x1024"
+  ],
+  "passed": true,
+  "playwright_cli_version": "0.1.5",
+  "playwright_core_version": "1.60.0-alpha-1775237291000",
+  "ready_flow_viewports": [
+    "390x844",
+    "1440x900"
+  ],
+  "screenshot_count": 8,
+  "surfaces": [
+    "catalog",
+    "detail",
+    "history",
+    "regions",
+    "markets",
+    "selection"
+  ]
+}

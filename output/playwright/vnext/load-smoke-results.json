@@ -1,0 +1,35 @@
+{
+  "candidate_sha": "cb0d4264ceee434fd66ff230cac0c29fe28308a2",
+  "concurrency": {
+    "in_flight_limit": 20,
+    "in_flight_within_limit": true,
+    "observed_in_flight_peak": 2
+  },
+  "counts": {
+    "catalog_list_search": 420,
+    "completed": 600,
+    "detail": 180,
+    "errors": 0,
+    "http_5xx": 0,
+    "scheduled": 600,
+    "successful": 600
+  },
+  "duration_seconds": 60,
+  "generated_at": "2026-08-31T06:25:05Z",
+  "latency_ms": {
+    "max": 116.373,
+    "p50": 46.523,
+    "p95": 74.8
+  },
+  "passed": true,
+  "profile": "SMOKE_NON_ACCEPTANCE",
+  "revision_consistent": true,
+  "target_requests_per_second": 10,
+  "timing": {
+    "burst_interval_violations": 0,
+    "elapsed_seconds": 60.006,
+    "minimum_inter_submission_ms": 95.016,
+    "p95_schedule_jitter_ms": 5.361,
+    "throughput_rps": 9.999
+  }
+}

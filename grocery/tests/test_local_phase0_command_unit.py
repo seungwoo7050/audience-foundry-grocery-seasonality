@@ -187,11 +187,11 @@ def test_seal_command_accepts_only_allowlisted_copy_and_emits_bounded_receipt() 
         call_command(
             "seal_recent_publication",
             decision_id=decision_id,
-            public_copy_revision="ko-v2",
+            public_copy_revision="ko-v3",
             stdout=output,
         )
 
-    seal.assert_called_once_with(decision_id=decision_id, copy_revision="ko-v2")
+    seal.assert_called_once_with(decision_id=decision_id, copy_revision="ko-v3")
     assert output.getvalue().strip() == " ".join(
         (
             "status=SEALED",
@@ -202,10 +202,10 @@ def test_seal_command_accepts_only_allowlisted_copy_and_emits_bounded_receipt() 
             "created=no",
         )
     )
-    assert "ko-v2" not in output.getvalue()
+    assert "ko-v3" not in output.getvalue()
 
 
-@pytest.mark.parametrize("copy_revision", ("ko-v3", "KO-V1", "private-copy"))
+@pytest.mark.parametrize("copy_revision", ("ko-v4", "KO-V1", "private-copy"))
 def test_seal_rejects_nonallowlisted_copy_without_echo(
     copy_revision: str,
 ) -> None:

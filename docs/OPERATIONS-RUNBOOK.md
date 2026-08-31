@@ -539,7 +539,9 @@ rehearsal reason과 분리된다.
   --expected-release-sha "$RELEASE_SHA"
 ```
 
-`PUBLIC_COPY_REVISION`은 현재 `ko-v1` 또는 `ko-v2`만 허용한다. 첫 activation은 authoritative
+`PUBLIC_COPY_REVISION`은 현재 `ko-v1`, `ko-v2` 또는 `ko-v3`만 허용한다. `ko-v3`는 초록장부
+frontend redesign copy이며 기존 revision row를 수정하지 않고 새 sealed revision으로만 만든다.
+production의 `ko-v3` seal·activation, traffic 전환과 rollback 결정은 사람 checkpoint다. 첫 activation은 authoritative
 inspection의 `version=0`, current literal `NONE`을 사용한다. production receipt는 actor,
 release SHA와 evidence hash를 출력하지 않는다. ReviewDecision·Activation은 actor를 DB audit에
 보존하지만 seal invoker는 revision row에 저장되지 않으므로 외부 MFA job audit와 change record가

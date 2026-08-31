@@ -17,7 +17,7 @@ class OfficialItemQueryField(forms.CharField):
 
     default_error_messages = {
         **forms.CharField.default_error_messages,
-        "unsafe": "검색어에는 줄바꿈이나 제어 문자를 사용할 수 없습니다.",
+        "unsafe": "품목명은 한 줄로 입력하세요.",
     }
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -46,7 +46,7 @@ class SearchForm(forms.Form):
         required=False,
         max_length=QUERY_MAX_LENGTH,
         error_messages={
-            "max_length": "검색어는 80자 이하여야 합니다.",
+            "max_length": "품목명은 80자 이하로 입력하세요.",
         },
     )
     category = forms.ChoiceField(

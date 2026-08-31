@@ -16,6 +16,11 @@ from grocery.source.monthly_history import (
     ParsedMonthlyPriceRow,
     parse_monthly_price_rows,
 )
+from grocery.source.regional_history import (
+    KAMIS_REGIONAL_PRICE_FIELDS,
+    ParsedRegionalPriceRow,
+    parse_regional_price_rows,
+)
 
 __all__ = [
     "KAMIS_RETAIL_COVERAGE_IDENTITY",
@@ -23,12 +28,15 @@ __all__ = [
     "HistoricalDimensionRegistry",
     "IdentityContractEvidence",
     "KAMIS_MONTHLY_PRICE_FIELDS",
+    "KAMIS_REGIONAL_PRICE_FIELDS",
     "KamisParseError",
     "ParsedMonthlyPriceRow",
+    "ParsedRegionalPriceRow",
     "ParsedRecentPriceResult",
     "ParsedRetailPriceRow",
     "build_identity_registry_from_reviewed_evidence",
     "parse_monthly_price_rows",
     "parse_recent_price_rows",
+    "parse_regional_price_rows",
     "YearMonth",
 ]

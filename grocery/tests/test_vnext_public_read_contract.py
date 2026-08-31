@@ -73,6 +73,7 @@ def test_monthly_chart_never_connects_across_a_missing_month() -> None:
     mean_segments = cast(list[dict[str, str]], chart["mean_segments"])
     range_segments = cast(list[dict[str, str]], chart["range_segments"])
     points = cast(list[dict[str, str]], chart["points"])
+    x_ticks = cast(list[dict[str, str]], chart["x_ticks"])
 
     assert len(mean_segments) == 1
     assert len(range_segments) == 1
@@ -81,6 +82,7 @@ def test_monthly_chart_never_connects_across_a_missing_month() -> None:
     assert isolated_x not in mean_segments[0]["points"]
     assert isolated_x not in range_segments[0]["points"]
     assert chart["gap_markers"] == [{"x": "490.67", "label": "2026.03"}]
+    assert [tick["anchor"] for tick in x_ticks] == ["start", "middle", "end"]
     assert chart["points"] == [
         {"x": "64", "y": "195.2"},
         {"x": "277.33", "y": "150.4"},

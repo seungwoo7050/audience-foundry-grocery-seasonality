@@ -307,6 +307,34 @@ def test_detail_direction_is_not_conveyed_by_symbol_color_or_chart_alone() -> No
     assert 'aria-hidden="true"' in html
 
 
+def test_detail_navigation_explains_the_market_path_without_inventing_a_route() -> None:
+    html = render(
+        "grocery/detail.html",
+        detail_context(
+            historical_links={"regions_url": "/series/1/regions/"},
+            section_nav=[
+                {
+                    "label": "최근 조사값",
+                    "url": "/series/1/",
+                    "current": True,
+                    "available": True,
+                },
+                {
+                    "label": "지역별 조사값",
+                    "url": "/series/1/regions/",
+                    "current": False,
+                    "available": True,
+                },
+            ],
+        ),
+    )
+
+    compact_html = " ".join(html.split())
+    assert 'href="/series/1/regions/"' in html
+    assert "지역별 조사값 · 지역 선택 후 시장별 조사값" in compact_html
+    assert "/markets/" not in html
+
+
 @pytest.mark.parametrize(
     ("template_name", "heading"),
     [
@@ -380,5 +408,5 @@ def test_styles_define_ledger_tokens_responsive_interaction_and_user_preferences
     assert "linear-gradient(" not in css
     assert "radial-gradient(" not in css
     assert "box-shadow" not in css
-    assert "--color-lower: #245b73" in css
-    assert "--color-higher: #245b73" in css
+    assert "--color-lower: #1c5d75" in css
+    assert "--color-higher: #1c5d75" in css

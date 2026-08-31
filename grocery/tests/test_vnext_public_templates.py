@@ -142,6 +142,7 @@ def test_history_leads_with_summary_and_opens_only_the_latest_year() -> None:
     assert html.index("2026년") < html.index("2025년")
     assert html.count("<details") == 2
     assert html.count(" open>") == 1
+    assert 'class="history-year-groups" aria-label=' not in html
 
 
 def test_region_and_market_pages_keep_provider_facts_distinct() -> None:
@@ -213,6 +214,29 @@ def test_historical_blocking_states_hide_controls_and_fact_ledgers() -> None:
         assert "아직 공개된 조사 자료가 없습니다" in html
         assert 'class="scope-form' not in html
         assert "-ledger" not in html
+
+
+def test_historical_server_errors_without_series_keep_truthful_recovery() -> None:
+    cases = (
+        ("grocery/history.html", "history_state", "월별 조사 기록"),
+        ("grocery/regions.html", "regions_state", "지역별 소매 조사값"),
+        ("grocery/markets.html", "markets_state", "시장별 소매 조사값"),
+    )
+    rendered: dict[str, str] = {}
+
+    for template, state_key, heading in cases:
+        html = render_to_string(
+            template,
+            {"home_url": "/", state_key: "server_error", "retry_url": "/safe-retry/"},
+        )
+        rendered[template] = html
+        assert html.count("<h1>") == 1
+        assert f"<h1>{heading}</h1>" in html
+        assert "조사 자료를 불러오지 못했습니다" in html
+
+    markets_html = rendered["grocery/markets.html"]
+    assert '<a href="/">← 채소·과일 소매 조사값</a>' in markets_html
+    assert "← 지역별 조사값" not in markets_html
 
 
 def test_catalog_validation_reveals_and_associates_advanced_controls() -> None:

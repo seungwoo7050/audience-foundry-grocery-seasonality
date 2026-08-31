@@ -58,11 +58,19 @@ def test_focus_and_interactive_boundaries_meet_non_text_contrast() -> None:
         (colors["color-focus"], colors["color-canvas"]),
         (colors["color-focus"], colors["color-surface"]),
         (colors["color-focus"], colors["color-brand-soft"]),
+        (colors["color-focus-on-dark"], colors["color-brand-strong"]),
         (colors["color-border-strong"], colors["color-canvas"]),
         (colors["color-border-strong"], colors["color-surface"]),
     )
 
     assert min(_contrast(foreground, background) for foreground, background in pairs) >= 3
+
+
+def test_selected_segment_and_header_link_hover_text_remains_legible() -> None:
+    colors = _colors()
+
+    # Both selected segments and the masthead selection link use this hover pair.
+    assert _contrast(colors["color-on-brand"], colors["color-brand"]) >= 4.5
 
 
 def test_price_direction_tokens_use_one_neutral_data_color() -> None:

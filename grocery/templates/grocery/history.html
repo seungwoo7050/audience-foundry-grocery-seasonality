@@ -114,7 +114,7 @@
                 <circle class="history-chart__point" cx="{{ point.x }}" cy="{{ point.y }}" r="3"/>
               {% endfor %}
               {% for tick in history_chart.x_ticks %}
-                <text class="history-chart__label history-chart__label--x" x="{{ tick.x }}" y="{{ tick.y }}">{{ tick.label }}</text>
+                <text class="history-chart__label history-chart__label--x" x="{{ tick.x }}" y="{{ tick.y }}" text-anchor="{{ tick.anchor }}">{{ tick.label }}</text>
               {% endfor %}
             </svg>
             <figcaption id="history-chart-caption">
@@ -128,7 +128,7 @@
         {% endif %}
 
         {% if history_year_groups %}
-          <div class="history-year-groups" aria-label="연도별 월 조사 기록">
+          <div class="history-year-groups">
             {% for group in history_year_groups %}
               <details class="history-year{% if group.is_latest %} history-year--latest{% endif %}"{% if group.open %} open{% endif %}>
                 <summary>

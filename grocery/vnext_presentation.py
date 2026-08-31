@@ -266,6 +266,13 @@ def build_history_chart(data: Sequence[MonthlyChartDatum]) -> dict[str, object]:
             "x": _svg_number(x_position(month_number)),
             "y": "268",
             "label": _month_label(month_number),
+            "anchor": (
+                "start"
+                if month_number == first_month
+                else "end"
+                if month_number == last_month
+                else "middle"
+            ),
         }
         for month_number in tick_months
     ]

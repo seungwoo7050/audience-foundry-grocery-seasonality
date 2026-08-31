@@ -1,16 +1,19 @@
+{% firstof back_url catalog_url home_url "/" as recovery_url %}
 <nav class="breadcrumb" aria-label="이전 화면으로 돌아가기">
-  <a href="{{ back_url|default:catalog_url }}">← {{ back_label|default:"채소·과일 소매 조사값" }}</a>
+  <a href="{{ recovery_url }}">← {{ back_label|default:"채소·과일 소매 조사값" }}</a>
 </nav>
 
 <header class="record-heading">
   <p class="eyebrow">{{ page_eyebrow }}</p>
-  <h1>{{ series.item_name }}</h1>
+  <h1>{% firstof series.item_name page_eyebrow "조사 자료" %}</h1>
   <p class="record-heading__summary">{{ page_summary }}</p>
-  <dl class="detail-signature" aria-label="품목 조건">
-    <div><dt>품종</dt><dd>{{ series.variety_name }}</dd></div>
-    <div><dt>등급</dt><dd>{{ series.grade_name }}</dd></div>
-    <div><dt>판매 단위</dt><dd>{{ series.unit_label }}</dd></div>
-  </dl>
+  {% if series.variety_name or series.grade_name or series.unit_label %}
+    <dl class="detail-signature" aria-label="품목 조건">
+      {% if series.variety_name %}<div><dt>품종</dt><dd>{{ series.variety_name }}</dd></div>{% endif %}
+      {% if series.grade_name %}<div><dt>등급</dt><dd>{{ series.grade_name }}</dd></div>{% endif %}
+      {% if series.unit_label %}<div><dt>판매 단위</dt><dd>{{ series.unit_label }}</dd></div>{% endif %}
+    </dl>
+  {% endif %}
 </header>
 
 {% include "grocery/_series_nav.html" with section_nav=section_nav series=series %}

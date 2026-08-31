@@ -29,6 +29,7 @@
   --color-lower: #1c5d75;
   --color-higher: #1c5d75;
   --color-focus: #075d92;
+  --color-focus-on-dark: #8ecfe4;
   --color-on-brand: #fffdf6;
   --color-harvest: #a93426;
   --color-forest: #123f2d;
@@ -108,6 +109,10 @@ a:hover {
   outline-offset: 3px;
 }
 
+.site-header :focus-visible {
+  outline-color: var(--color-focus-on-dark);
+}
+
 h1,
 h2,
 h3,
@@ -119,7 +124,6 @@ dd {
 }
 
 h1,
-h2,
 .brand__name {
   font-family: "Gowun Batang", serif;
   font-weight: 700;
@@ -127,6 +131,7 @@ h2,
   text-wrap: balance;
 }
 
+h2,
 h3,
 h4 {
   font-family: inherit;
@@ -144,8 +149,25 @@ h1 {
 
 h2 {
   margin-bottom: var(--space-4);
+  font-size: clamp(1.3rem, 3vw, 1.65rem);
+  letter-spacing: -0.025em;
+}
+
+.catalog-results__heading h2,
+.history-section > .section-heading h2,
+.region-section__intro h2,
+.market-section > .section-heading h2,
+.selection-section__heading h2 {
+  font-family: "Gowun Batang", serif;
   font-size: clamp(1.55rem, 4.2vw, 2.35rem);
+  font-weight: 700;
   letter-spacing: -0.04em;
+  line-height: 1.18;
+}
+
+.error-page h1 {
+  font-family: inherit;
+  font-weight: 850;
 }
 
 h3 {
@@ -1405,10 +1427,6 @@ select[aria-invalid="true"] {
   font-size: 15px;
 }
 
-.history-chart__label--x {
-  text-anchor: middle;
-}
-
 .history-chart figcaption {
   margin-top: var(--space-2);
   color: var(--color-muted);
@@ -2110,6 +2128,12 @@ select[aria-invalid="true"] {
     background: var(--color-brand-soft);
   }
 
+  .segment--selected:hover,
+  .site-actions a:hover {
+    background: var(--color-harvest);
+    color: var(--color-on-brand);
+  }
+
   .region-row__action a:hover {
     background: var(--color-brand-soft);
   }
@@ -2473,13 +2497,10 @@ select[aria-invalid="true"] {
     padding: var(--space-3);
   }
 
-  .ledger-entry__heading,
-  .ledger-entry__actions {
-    grid-column: auto;
-  }
-
   .ledger-entry__heading {
     display: block;
+    grid-row: 1;
+    grid-column: 1;
   }
 
   .ledger-fact {
@@ -2487,11 +2508,19 @@ select[aria-invalid="true"] {
     border-top: 0;
   }
 
-  .ledger-fact--price,
-  .ledger-fact--comparison,
+  .ledger-fact--price {
+    grid-row: 1;
+    grid-column: 2;
+  }
+
+  .ledger-fact--comparison {
+    grid-row: 1;
+    grid-column: 3;
+  }
+
   .ledger-fact--date {
-    grid-row: auto;
-    grid-column: auto;
+    grid-row: 1;
+    grid-column: 4;
   }
 
   .ledger-fact dt {
@@ -2507,7 +2536,8 @@ select[aria-invalid="true"] {
   }
 
   .ledger-entry__actions {
-    grid-row: auto;
+    grid-row: 1;
+    grid-column: 5;
     border-top: 0;
   }
 

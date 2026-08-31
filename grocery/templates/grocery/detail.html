@@ -48,13 +48,13 @@
 
   <div class="detail-pathways">
     {% if section_nav %}
-      {% include "grocery/_series_nav.html" with section_nav=section_nav series=series %}
+      {% include "grocery/_series_nav.html" with section_nav=section_nav series=series market_continuation=historical_links.regions_url %}
     {% elif historical_links %}
       <nav class="series-nav" aria-label="{{ series.item_name }} 자료 보기">
         <ul>
           <li><span class="series-nav__item series-nav__item--current" aria-current="page">최근 조사값</span></li>
           {% if historical_links.history_url %}<li><a class="series-nav__item" href="{{ historical_links.history_url }}">월별 기록</a></li>{% endif %}
-          {% if historical_links.regions_url %}<li><a class="series-nav__item" href="{{ historical_links.regions_url }}">지역별 조사값</a></li>{% endif %}
+          {% if historical_links.regions_url %}<li><a class="series-nav__item" href="{{ historical_links.regions_url }}">지역별 조사값 · 지역 선택 후 시장별 조사값</a></li>{% endif %}
         </ul>
       </nav>
     {% endif %}

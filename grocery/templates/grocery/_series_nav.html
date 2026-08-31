@@ -6,7 +6,9 @@
           {% if item.current %}
             <span class="series-nav__item series-nav__item--current" aria-current="page">{{ item.label }}</span>
           {% elif item.available and item.url %}
-            <a class="series-nav__item" href="{{ item.url }}">{{ item.label }}</a>
+            <a class="series-nav__item" href="{{ item.url }}">
+              {{ item.label }}{% if market_continuation and item.label == "지역별 조사값" %} · 지역 선택 후 시장별 조사값{% endif %}
+            </a>
           {% endif %}
         </li>
       {% endfor %}

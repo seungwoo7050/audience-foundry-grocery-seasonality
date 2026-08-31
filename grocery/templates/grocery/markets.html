@@ -3,7 +3,11 @@
 {% block title %}{{ series.item_name|default:"품목" }} 시장별 조사값 | 초록장부{% endblock %}
 
 {% block content %}
-  {% include "grocery/_historical_header.html" with page_eyebrow="시장별 소매 조사값" page_summary="선택한 지역과 조사일에 KAMIS가 기록한 시장별 소매 조사값을 확인합니다." back_url=regions_url back_label="지역별 조사값" %}
+  {% if regions_url %}
+    {% include "grocery/_historical_header.html" with page_eyebrow="시장별 소매 조사값" page_summary="선택한 지역과 조사일에 KAMIS가 기록한 시장별 소매 조사값을 확인합니다." back_url=regions_url back_label="지역별 조사값" %}
+  {% else %}
+    {% include "grocery/_historical_header.html" with page_eyebrow="시장별 소매 조사값" page_summary="선택한 지역과 조사일에 KAMIS가 기록한 시장별 소매 조사값을 확인합니다." back_label="채소·과일 소매 조사값" %}
+  {% endif %}
 
   {% if markets_state == "loading" or markets_state == "unavailable" or markets_state == "server_error" %}
     {% include "grocery/_state_notice.html" with state=markets_state retry_url=retry_url %}

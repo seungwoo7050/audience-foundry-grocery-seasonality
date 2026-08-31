@@ -132,8 +132,7 @@ def complete_kamis_fetch(
     if attempt.state != FetchAttempt.State.STARTED:
         raise ValidationError("Only a started fetch attempt can be completed.")
 
-    source = attempt.source_configuration
-    _validate_result_budget(source, result)
+    _validate_result_budget(attempt, result)
     receipts = _receipt_candidates(attempt, result)
     if ordered_page_manifest_sha256(receipts) != result.ordered_manifest_sha256:
         raise ValidationError("The client and persistence ordered manifests differ.")
@@ -220,10 +219,13 @@ def _classify_transport_failure(
     return FetchAttempt.State.TERMINAL_FAILED, failure_class
 
 
-def _validate_result_budget(
-    source: SourceConfiguration,
-    result: KamisFetchResult,
-) -> None:
+def _validate_result_budget(attempt: FetchAttempt, result: KamisFetchResult) -> None:
+    source = attempt.source_configuration
+    if attempt.request_scope_sha256:
+        if result.request_scope_sha256 != attempt.request_scope_sha256:
+            raise ValidationError("The fetch result does not match its historical request scope.")
+    elif result.request_scope_sha256 is not None:
+        raise ValidationError("A recent fetch result cannot carry a historical request scope.")
     if not result.page_receipts:
         raise ValidationError("A successful fetch requires at least one page receipt.")
     if result.call_count < len(result.page_receipts):
@@ -385,8 +387,7 @@ def _validate_completed_replay(
     attempt: FetchAttempt,
     result: KamisFetchResult,
 ) -> CompletedKamisFetch:
-    source = attempt.source_configuration
-    _validate_result_budget(source, result)
+    _validate_result_budget(attempt, result)
     persisted_receipts = list(attempt.page_receipts.order_by("request_ordinal"))
     candidate_receipts = _receipt_candidates(attempt, result)
     persisted_shape = [
